@@ -1,10 +1,10 @@
--- LINA v7.4 FIX | Lethal Ape
+-- LINA v7.5 FIX | Lethal Ape
 local function notify0(t,x)
 	pcall(function()
 		game:GetService("StarterGui"):SetCore("SendNotification",{Title=t,Text=tostring(x):sub(1,190),Duration=8})
 	end)
 end
-notify0("LINA","Loading LINA v7.4...")
+notify0("LINA","Loading LINA v7.5...")
 
 local okRun,errRun=pcall(function()
 local Players=game:GetService("Players")
@@ -68,7 +68,7 @@ local function bind(sg,fn) local c=sg:Connect(fn) conns[#conns+1]=c return c end
 
 -- GUI ROOT
 local gui=Instance.new("ScreenGui")
-gui.Name="LINA_V73" gui.ResetOnSpawn=false gui.DisplayOrder=999
+gui.Name="LINA_V75" gui.ResetOnSpawn=false gui.DisplayOrder=999
 local done=false
 for _,g in ipairs({
 	function() return lp:WaitForChild("PlayerGui",5) end,
@@ -76,7 +76,7 @@ for _,g in ipairs({
 	function() return game:GetService("CoreGui") end}) do
 	local ok,p=pcall(g)
 	if ok and p and not done then
-		pcall(function() local o=p:FindFirstChild("LINA_V73") if o then o:Destroy() end end)
+		pcall(function() local o=p:FindFirstChild("LINA_V75") if o then o:Destroy() end end)
 		if pcall(function() gui.Parent=p end) and gui.Parent==p then done=true end
 	end
 end
@@ -98,7 +98,7 @@ local stroke = mk("UIStroke",{Color=ACCENT,Thickness=1.4,Transparency=0.35},main
 local bar=mk("Frame",{Size=UDim2.new(1,0,0,4),BackgroundColor3=ACCENT,BorderSizePixel=0},main)
 corner(bar,4)
 
-local header=mk("TextLabel",{Size=UDim2.new(1,-50,0,22),Position=UDim2.fromOffset(12,6),BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,Text="LINA  v7.4",TextColor3=WHITE,Font=Enum.Font.GothamBold,TextSize=15},main)
+local header=mk("TextLabel",{Size=UDim2.new(1,-50,0,22),Position=UDim2.fromOffset(12,6),BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,Text="LINA  v7.5",TextColor3=WHITE,Font=Enum.Font.GothamBold,TextSize=15},main)
 local status=mk("TextLabel",{Size=UDim2.new(1,-20,0,14),Position=UDim2.fromOffset(12,26),BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,Text="Status: idle",TextColor3=C(120,255,160),Font=Enum.Font.Code,TextSize=11},main)
 local function stat(x) status.Text=tostring(x):sub(1,44) end
 
@@ -226,11 +226,35 @@ local function updateESP()
 		if i>45 then break end t.stamp=now if not t.vis then makeVis(t) end
 		t.vis.hl.Enabled=i<=28 t.vis.bb.Adornee=t.part
 		
-        -- TEXT ESP & FIX NAMA MONSTER
+		-- TEXT ESP & FIX NAMA MONSTER (DEEP SCAN)
 		local txt = t.kind
-		if t.kind == "mon" and t.hum and t.hum.DisplayName ~= "" then
-			txt = t.hum.DisplayName
+		if t.kind == "mon" then
+			local realName = nil
+			if t.hum and t.hum.DisplayName ~= "" and t.hum.DisplayName ~= "Mon" then
+				realName = t.hum.DisplayName
+			end
+			if not realName then
+				for _, obj in ipairs(t.inst:GetDescendants()) do
+					if obj:IsA("TextLabel") and obj.Text ~= "" and #obj.Text < 30 then
+						realName = obj.Text
+						break
+					end
+				end
+			end
+			if not realName then
+				for _, obj in ipairs(t.inst:GetChildren()) do
+					if obj:IsA("StringValue") or obj:IsA("ObjectValue") then
+						realName = obj.Value and obj.Value.Name or obj.Name
+						break
+					end
+				end
+			end
+			if not realName and t.inst.Name ~= "Mon" and t.inst.Name ~= "mon" then
+				realName = t.inst.Name
+			end
+			txt = realName or "Unknown Monster"
 		end
+		
 		if t.price then txt = txt.." ("..t.price.." Gold)" end
 		txt = txt.."\n"..math.floor(t.d).."m"
 		if t.hum and t.hum.Parent then txt=txt.." | HP "..math.floor(t.hum.Health) end
@@ -370,7 +394,7 @@ env.LINA_UNLOAD=unload
 btn(pM,"Unload Script",unload,C(130,35,35))
 
 -- TAB SET (WARNA & BAHASA)
-local LANGUAGES = { ["EN"] = {"ESP","Farm","Move","Settings","LINA v7.4"}, ["ID"] = {"ESP","Kebun","Gerak","Pengaturan","LINA v7.4"} }
+local LANGUAGES = { ["EN"] = {"ESP","Farm","Move","Settings","LINA v7.5"}, ["ID"] = {"ESP","Kebun","Gerak","Pengaturan","LINA v7.5"} }
 title(pSet, "UI THEME COLOR")
 local colors = { {"Red", C(235,70,50)}, {"Blue", C(50,120,235)}, {"Green", C(50,235,120)}, {"Purple", C(180,50,235)} }
 for _, cData in ipairs(colors) do btn(pSet, "Theme: "..cData[1], function(b) bar.BackgroundColor3 = cData[2] stroke.Color = cData[2] banner.BackgroundColor3 = cData[2] for k,p in ipairs(pages) do if p.Visible then tabBtns[k].BackgroundColor3 = cData[2] break end end end, cData[2]) end
@@ -385,6 +409,6 @@ bind(RS.Heartbeat,function(dt)
 	if S.tp then local ch=lp.Character local h=ch and ch:FindFirstChildOfClass("Humanoid") local hrp=ch and ch:FindFirstChild("HumanoidRootPart") if h and hrp and h.MoveDirection.Magnitude>0 then hrp.CFrame=hrp.CFrame+h.MoveDirection*(cfg.tp*dt) end end
 	acc=acc+dt if acc>=0.15 then acc=0 pcall(updateESP) end
 end)
-notify("LINA","READY v7.4! Bug Fixed & Monster Name Fixed.")
+notify("LINA","READY v7.5! Deep Scan & Bug Fixed.")
 end)
 if not okRun then notify0("LINA ERROR",errRun) end
