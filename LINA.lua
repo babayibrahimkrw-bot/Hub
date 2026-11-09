@@ -1,4 +1,5 @@
 -- LINA v7.2 | Lethal Ape | ESP + Auto Farm + Sell All
+-- Updated: Added Settings Tab (Colors & Languages)
 local function notify0(t,x)
 	pcall(function()
 		game:GetService("StarterGui"):SetCore("SendNotification",{Title=t,Text=tostring(x):sub(1,190),Duration=8})
@@ -96,7 +97,7 @@ end
 
 local main=mk("Frame",{Size=UDim2.fromOffset(250,360),Position=UDim2.new(0,10,0.1,0),BackgroundColor3=BG,BorderSizePixel=0},gui)
 corner(main,12)
-mk("UIStroke",{Color=ACCENT,Thickness=1.4,Transparency=0.35},main)
+local stroke = mk("UIStroke",{Color=ACCENT,Thickness=1.4,Transparency=0.35},main)
 
 local bar=mk("Frame",{Size=UDim2.new(1,0,0,4),BackgroundColor3=ACCENT,BorderSizePixel=0},main)
 corner(bar,4)
@@ -143,7 +144,8 @@ bind(UIS.InputChanged,function(i)
 		main.Position=UDim2.new(sp0.X.Scale,sp0.X.Offset+d.X,sp0.Y.Scale,sp0.Y.Offset+d.Y)
 	end
 end)
--- TAB
+
+-- TAB (DITAMBAH TAB SETTINGS)
 local pages,tabBtns={},{}
 local function showTab(n)
 	for k,p in ipairs(pages) do
@@ -152,7 +154,7 @@ local function showTab(n)
 		tabBtns[k].TextColor3=(k==n) and WHITE or GREY
 	end
 end
-for i,name in ipairs({"ESP","Farm","Move"}) do
+for i,name in ipairs({"ESP","Farm","Move","Set"}) do
 	local sf=mk("ScrollingFrame",{
 		Size=UDim2.fromScale(1,1),BackgroundTransparency=1,BorderSizePixel=0,
 		ScrollBarThickness=3,ScrollBarImageColor3=ACCENT,
@@ -162,13 +164,12 @@ for i,name in ipairs({"ESP","Farm","Move"}) do
 	mk("UIPadding",{PaddingTop=UDim.new(0,2),PaddingBottom=UDim.new(0,8)},sf)
 	pages[i]=sf
 	local tb=mk("TextButton",{
-		Size=UDim2.new(1/3,-4,1,0),Position=UDim2.new((i-1)/3,2,0,0),BackgroundColor3=ROW,
+		Size=UDim2.new(1/4,-4,1,0),Position=UDim2.new((i-1)/4,2,0,0),BackgroundColor3=ROW,
 		Text=name,TextColor3=GREY,Font=Enum.Font.GothamBold,TextSize=12},tabBar)
 	corner(tb,8)
 	tabBtns[i]=tb
 	bind(tb.MouseButton1Click,function() showTab(i) end)
-end
-
+		end
 -- COMPONENTS
 local order=0
 local function row(page,h)
@@ -642,7 +643,7 @@ task.spawn(function()
 end)
 
 -- ESP TAB
-local pE,pF,pM=pages[1],pages[2],pages[3]
+local pE,pF,pM,pSet=pages[1],pages[2],pages[3],pages[4]
 title(pE,"MONSTER")
 tog(pE,"Monster ESP",S,"mon",nil,MONCOL)
 tog(pE,"Monster Alert",S,"alert",nil,ALERTCOL)
@@ -694,6 +695,48 @@ local function unload()
 end
 env.LINA_UNLOAD=unload
 btn(pM,"Unload Script",unload,C(130,35,35))
+
+-- ==========================================
+-- SETTINGS TAB (COLOR & LANGUAGE)
+-- ==========================================
+local uiElements = {main, header, status, banner}
+local translations = {
+	["EN"] = { esp="ESP", farm="Farm", move="Move", set="Set", title="LINA v7.2" },
+	["ID"] = { esp="ESP", farm="Kebun", move="Gerak", set="Set", title="LINA v7.2" },
+	["ES"] = { esp="ESP", farm="Granja", move="Mover", set="Ajustes", title="LINA v7.2" },
+	["JP"] = { esp="ESP", farm="ファーム", move="移動", set="設定", title="LINA v7.2" },
+	["AR"] = { esp="ESP", farm="مزرعة", move="حركة", set="إعدادات", title="LINA v7.2" }
+}
+
+title(pSet, "UI THEME COLOR")
+local colors = {
+	{"Red", C(235,70,50)}, {"Blue", C(50,120,235)}, {"Green", C(50,235,120)},
+	{"Purple", C(180,50,235)}, {"Yellow", C(235,210,50)}, {"Pink", C(235,50,180)}
+}
+for _, cData in ipairs(colors) do
+	btn(pSet, "Theme: "..cData[1], function(b)
+		bar.BackgroundColor3 = cData[2]
+		stroke.Color = cData[2]
+		banner.BackgroundColor3 = cData[2]
+		for k,p in ipairs(pages) do
+			if p.Visible then tabBtns[k].BackgroundColor3 = cData[2] break end
+		end
+		for _, p in ipairs(pages) do p.ScrollBarImageColor3 = cData[2] end
+		notify("LINA", "Theme changed to "..cData[1])
+	end, cData[2])
+end
+
+title(pSet, "LANGUAGE (Select One)")
+for langCode, langData in pairs(translations) do
+	btn(pSet, "Language: "..langCode, function(b)
+		tabBtns[1].Text = langData.esp
+		tabBtns[2].Text = langData.farm
+		tabBtns[3].Text = langData.move
+		tabBtns[4].Text = langData.set
+		header.Text = langData.title
+		notify("LINA", "Language set to "..langCode)
+	end)
+end
 
 showTab(1)
 
