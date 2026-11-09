@@ -1,11 +1,10 @@
--- LINA v7.2 | Lethal Ape | ESP + Auto Farm + Jual Semua
--- Jalankan: loadstring(readfile("LINA_v7.2.lua"))()
+-- LINA v7.2 | Lethal Ape | ESP + Auto Farm + Sell All
 local function notify0(t,x)
 	pcall(function()
 		game:GetService("StarterGui"):SetCore("SendNotification",{Title=t,Text=tostring(x):sub(1,190),Duration=8})
 	end)
 end
-notify0("LINA","File dimuat...")
+notify0("LINA","Loading UI...")
 
 local okRun,errRun=pcall(function()
 local Players=game:GetService("Players")
@@ -76,9 +75,9 @@ for _,g in ipairs({
 		if pcall(function() gui.Parent=p end) and gui.Parent==p then done=true end
 	end
 end
-if not done then error("GUI gagal dipasang") end
+if not done then error("GUI failed to load") end
 
--- TEMA
+-- THEME
 local BG=C(14,14,20)
 local ROW=C(34,34,48)
 local OFFC=C(70,70,90)
@@ -170,7 +169,7 @@ for i,name in ipairs({"ESP","Farm","Move"}) do
 	bind(tb.MouseButton1Click,function() showTab(i) end)
 end
 
--- KOMPONEN
+-- COMPONENTS
 local order=0
 local function row(page,h)
 	order=order+1
@@ -211,7 +210,7 @@ local function num(page,label,tbl,key,mn,mx,unit)
 	lbl(r,label..(unit and (" ("..unit..")") or ""))
 	local box=mk("TextBox",{
 		Size=UDim2.fromOffset(62,24),Position=UDim2.new(1,-72,0.5,-12),BackgroundColor3=BG,
-		Text=tostring(tbl[key]),TextColor3=C(255,210,120),PlaceholderText="angka",
+		Text=tostring(tbl[key]),TextColor3=C(255,210,120),PlaceholderText="num",
 		Font=Enum.Font.GothamBold,TextSize=13,ClearTextOnFocus=true},r)
 	corner(box,7)
 	bind(box.FocusLost,function()
@@ -437,13 +436,13 @@ local function updateESP()
 		if t.vis and t.stamp~=now then destroyVis(t) end
 	end
 	if nearest then
-		banner.Text="! "..nearest.name.." mendekat ["..math.floor(nd).."m]"
+		banner.Text="! "..nearest.name.." approaching ["..math.floor(nd).."m]"
 		banner.BackgroundColor3=ALERTCOL
 		banner.Visible=true
 	else
 		banner.Visible=false
 	end
-    end
+		end
 -- AUTO FARM
 local bad={}
 local collected=0
@@ -534,11 +533,11 @@ local function doSellAll(backCf)
 	if selling then return end
 	selling=true
 	local ok,err=pcall(function()
-		stat("Cari Scrapper...")
+		stat("Finding Scrapper...")
 		local pr=findSell()
 		if not pr then
-			notify("LINA","Scrapper tidak ketemu")
-			stat("Scrapper tidak ketemu")
+			notify("LINA","Scrapper not found")
+			stat("Scrapper not found")
 			return
 		end
 		local holder=pr.Parent
@@ -548,7 +547,7 @@ local function doSellAll(backCf)
 			part=m and getPart(m)
 		end
 		local hrp=getHrp()
-		if not part or not hrp then stat("Posisi Scrapper tidak ketemu") return end
+		if not part or not hrp then stat("Scrapper position not found") return end
 		local back=backCf or hrp.CFrame
 		tpTo(part.Position+Vector3.new(0,0,3))
 		task.wait(0.5)
@@ -566,7 +565,7 @@ local function doSellAll(backCf)
 				if t:IsA("Tool") and isSellTool(t) then tools[#tools+1]=t end
 			end
 		end
-		stat("Ambil semua: "..#tools.." item")
+		stat("Taking all: "..#tools.." items")
 		for _,t in ipairs(tools) do
 			pcall(function() t.Parent=ch end)
 		end
@@ -581,7 +580,7 @@ local function doSellAll(backCf)
 		local tries=math.min(#tools+3,30)
 		for i=1,tries do
 			if left()==0 then break end
-			stat("Jual "..i.."/"..tries.." sisa "..left())
+			stat("Selling "..i.."/"..tries.." left "..left())
 			fireOne(pr)
 			task.wait(0.35)
 		end
@@ -589,17 +588,17 @@ local function doSellAll(backCf)
 		task.wait(0.3)
 		if hrp.Parent then hrp.CFrame=back end
 		collected=0
-		stat("Jual selesai, sisa "..left())
+		stat("Sell done, left "..left())
 	end)
 	selling=false
-	if not ok then notify("LINA","Jual error: "..tostring(err)) end
+	if not ok then notify("LINA","Sell error: "..tostring(err)) end
 end
 
 local function farmStep()
 	if selling then return end
 	local hrp=getHrp()
 	if not hrp then return end
-	if danger<20 then stat("Monster dekat! pause") return end
+	if danger<20 then stat("Monster nearby! pause") return end
 	local target=ITEMS[cfg.target][1]
 	local best,bd=nil,1e9
 	local now=os.clock()
@@ -610,15 +609,15 @@ local function farmStep()
 		end
 	end
 	if not best then
-		stat("Tidak ada "..target)
+		stat("No "..target.." found")
 		if now-lastMsg>10 then
 			lastMsg=now
-			notify("LINA","Tidak ada "..target.." di map")
+			notify("LINA","No "..target.." in map")
 		end
 		return
 	end
 	local back=hrp.CFrame
-	stat("Ambil "..target.." ("..math.floor(bd).."m)")
+	stat("Getting "..target.." ("..math.floor(bd).."m)")
 	tpTo(best.part.Position)
 	task.wait(0.25)
 	collect(best.inst,best.part)
@@ -626,7 +625,7 @@ local function farmStep()
 	if taken(best.inst,best) then
 		collected=collected+1
 		removeObj(best.inst)
-		stat("Terkumpul: "..collected)
+		stat("Collected: "..collected)
 	else
 		bad[best.inst]=os.clock()+20
 	end
@@ -642,7 +641,7 @@ task.spawn(function()
 	end
 end)
 
--- ISI TAB ESP
+-- ESP TAB
 local pE,pF,pM=pages[1],pages[2],pages[3]
 title(pE,"MONSTER")
 tog(pE,"Monster ESP",S,"mon",nil,MONCOL)
@@ -653,16 +652,16 @@ for _,it in ipairs(ITEMS) do
 	itemRefresh[#itemRefresh+1]=tog(pE,it[1],I,it[1],nil,it[3])
 end
 local allOn=false
-btn(pE,"Semua Item ON / OFF",function()
+btn(pE,"All Items ON / OFF",function()
 	allOn=not allOn
 	for _,it in ipairs(ITEMS) do I[it[1]]=allOn end
 	for _,r in ipairs(itemRefresh) do r() end
 end)
-title(pE,"PENGATURAN (ketik angka)")
-num(pE,"Jarak ESP",cfg,"dist",10,5000,"stud")
-num(pE,"Jarak Alert",cfg,"alertD",10,500,"stud")
+title(pE,"SETTINGS")
+num(pE,"ESP Distance",cfg,"dist",10,5000,"studs")
+num(pE,"Alert Distance",cfg,"alertD",10,500,"studs")
 
--- ISI TAB FARM
+-- FARM TAB
 title(pF,"AUTO FARM")
 btn(pF,"Target: "..ITEMS[cfg.target][1],function(b)
 	cfg.target=cfg.target%#ITEMS+1
@@ -672,21 +671,21 @@ end).TextColor3=ITEMS[cfg.target][3]
 tog(pF,"AUTO FARM",S,"farm",function(on)
 	if not on then stat("Status: idle") end
 	if on and not fireproximityprompt then
-		notify("LINA","Executor tanpa fireproximityprompt, ambil otomatis mungkin gagal")
+		notify("LINA","Executor missing fireproximityprompt, auto collect might fail")
 	end
 end)
-title(pF,"JUAL")
-tog(pF,"AUTO JUAL",S,"sell")
-btn(pF,"Jual tiap: "..SELLN[cfg.sellIdx].." item",function(b)
+title(pF,"SELL")
+tog(pF,"AUTO SELL",S,"sell")
+btn(pF,"Sell every: "..SELLN[cfg.sellIdx].." items",function(b)
 	cfg.sellIdx=cfg.sellIdx%#SELLN+1
-	b.Text="Jual tiap: "..SELLN[cfg.sellIdx].." item"
+	b.Text="Sell every: "..SELLN[cfg.sellIdx].." items"
 end)
-btn(pF,"JUAL SEMUA ITEM",function() task.spawn(doSellAll) end,ACCENT)
+btn(pF,"SELL ALL ITEMS",function() task.spawn(doSellAll) end,ACCENT)
 
--- ISI TAB MOVE
-title(pM,"GERAK")
+-- MOVE TAB
+title(pM,"MOVE")
 tog(pM,"TP Walk",S,"tp")
-num(pM,"TP Speed",cfg,"tp",1,300,"stud/detik")
+num(pM,"TP Speed",cfg,"tp",1,300,"studs/s")
 local function unload()
 	alive=false
 	for _,c in ipairs(conns) do pcall(function() c:Disconnect() end) end
@@ -713,7 +712,7 @@ bind(RS.Heartbeat,function(dt)
 	if acc>=0.15 then acc=0 pcall(updateESP) end
 end)
 
-notify("LINA","SIAP v7.2! Panel di kiri layar")
+notify("LINA","READY v7.2! Panel on the left screen")
 end)
 
 if not okRun then notify0("LINA ERROR",errRun) end
