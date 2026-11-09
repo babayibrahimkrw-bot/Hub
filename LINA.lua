@@ -1,10 +1,10 @@
--- LINA v7.3 | Lethal Ape | ESP + Auto Farm + Settings
+-- LINA v7.4 FIX | Lethal Ape
 local function notify0(t,x)
 	pcall(function()
 		game:GetService("StarterGui"):SetCore("SendNotification",{Title=t,Text=tostring(x):sub(1,190),Duration=8})
 	end)
 end
-notify0("LINA","Loading LINA v7.3...")
+notify0("LINA","Loading LINA v7.4...")
 
 local okRun,errRun=pcall(function()
 local Players=game:GetService("Players")
@@ -22,7 +22,7 @@ local function notify(t,x)
 end
 local function C(r,g,b) return Color3.fromRGB(r,g,b) end
 
--- DAFTAR ITEM & HARGA (Pake Awalan / Prefix)
+-- DAFTAR ITEM (Nama alternatif ditambahin)
 local ITEMS={
 	{"Red Gold","red gold",150,C(255,40,70)},
 	{"Ruby","ruby",35,C(255,40,70)},
@@ -40,7 +40,7 @@ local IGNORE={"shop","merchant","dummy"}
 local SELLKEYS={"scrapper","scrap","sell","recycl","trade"}
 local SELL_ALL_TOOLS=false
 local MON_LIST={
-	"???","Acidman","Ashes","Ashy","Big Guy","Big Larry","Bill","Billy",
+	"mon","???","Acidman","Ashes","Ashy","Big Guy","Big Larry","Bill","Billy",
 	"Bloodman","Bloody Ashy","Blud","Bob","Clyde","Color Lurker","Crud",
 	"Devil","Dlud","Dus","Fluddy","Fred","Ghost","Giant Guy","GLI.TCH.",
 	"Glowy-Blinky","Goo","Gooba","GorillaScar","Gus","Hazardman","Henry",
@@ -59,10 +59,11 @@ local ALERTCOL=C(255,120,0)
 local S={mon=false,alert=false,tp=false,farm=false,farmAll=false,sell=false,fb=false,afk=false,noclip=false,autoheal=false}
 local I={}
 for _,it in ipairs(ITEMS) do I[it[1]]=false end
-local cfg={target=2,tp=30,dist=500,alertD=60,sellIdx=3} -- Target default ke Ruby (index 2)
+local cfg={target=2,tp=30,dist=500,alertD=60,sellIdx=3} -- Target Ruby
 local SELLN={1,3,5,10,20}
 
 local conns,alive={},true
+local noclipParts={} -- Simpan part buat Noclip
 local function bind(sg,fn) local c=sg:Connect(fn) conns[#conns+1]=c return c end
 
 -- GUI ROOT
@@ -97,7 +98,7 @@ local stroke = mk("UIStroke",{Color=ACCENT,Thickness=1.4,Transparency=0.35},main
 local bar=mk("Frame",{Size=UDim2.new(1,0,0,4),BackgroundColor3=ACCENT,BorderSizePixel=0},main)
 corner(bar,4)
 
-local header=mk("TextLabel",{Size=UDim2.new(1,-50,0,22),Position=UDim2.fromOffset(12,6),BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,Text="LINA  v7.3",TextColor3=WHITE,Font=Enum.Font.GothamBold,TextSize=15},main)
+local header=mk("TextLabel",{Size=UDim2.new(1,-50,0,22),Position=UDim2.fromOffset(12,6),BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,Text="LINA  v7.4",TextColor3=WHITE,Font=Enum.Font.GothamBold,TextSize=15},main)
 local status=mk("TextLabel",{Size=UDim2.new(1,-20,0,14),Position=UDim2.fromOffset(12,26),BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,Text="Status: idle",TextColor3=C(120,255,160),Font=Enum.Font.Code,TextSize=11},main)
 local function stat(x) status.Text=tostring(x):sub(1,44) end
 
@@ -148,7 +149,7 @@ local function title(page,text) order=order+1 mk("TextLabel",{Size=UDim2.new(1,-
 
 local banner=mk("TextLabel",{Size=UDim2.fromOffset(300,36),Position=UDim2.new(0.5,-150,0,60),TextColor3=WHITE,Font=Enum.Font.GothamBold,TextSize=15,Visible=false},gui) corner(banner,10)
 
--- REGISTRY & ESP (DENGAN FITUR HARGA & AWALAN)
+-- REGISTRY & ESP
 local objs={}
 local danger=1e9
 local function getPart(o) if o:IsA("BasePart") then return o end if o:IsA("Model") then return o.PrimaryPart or o:FindFirstChild("HumanoidRootPart") or o:FindFirstChildWhichIsA("BasePart",true) end end
@@ -174,19 +175,19 @@ local function consider(o)
 	elseif o:IsA("Model") and o:FindFirstChildOfClass("Humanoid") then kind="mon" col=MONCOL
 	else 
 		for _,it in ipairs(ITEMS) do 
-			-- PAKE AWALAN: Cek apakah nama objek DIAWALI sama kata kunci
-			if l:sub(1, string.len(it[2])) == it[2] or l:find(it[2],1,true) then 
+			-- PAKE AWALAN & LEBIH LUAS
+			if l:find(it[2],1,true) or l:sub(1, string.len(it[2])) == it[2] then 
 				kind=it[1] col=it[4] price=it[3] break 
 			end 
 		end 
 	end
 	if not kind then return end if inPlayer(o) or hasTracked(o) then return end
 	
-	-- FILTER UKURAN (Biar tembok ga ke-ESP)
+	-- FILTER UKURAN (Dilonggarin dikit biar Amethyst gede masuk)
 	if kind~="mon" then 
 		local p=getPart(o) if not p then return end 
 		local s=p.Size 
-		if math.max(s.X,s.Y,s.Z)>30 then return end 
+		if math.max(s.X,s.Y,s.Z)>40 then return end 
 		if p.Transparency>=0.95 and allHidden(o) then return end 
 	end
 	addObj(o,kind,col,o.Name,price)
@@ -289,17 +290,15 @@ local function doSellAll(backCf)
 	selling=false if not ok then notify("LINA","Sell error: "..tostring(err)) end
 end
 
--- LOGIKA FARM (Bisa Target atau All)
+-- LOGIKA FARM CEPAT & AMAN
 local function farmStep()
-	if selling then return end local hrp=getHrp() if not hrp then return end if danger<20 then stat("Monster nearby! pause") return end
+	if selling then return end local hrp=getHrp() if not hrp then return end 
+	if danger<40 then stat("Monster nearby! Paused") return end -- ANTI MONSTER: Pause kalau monster < 40m
 	local best,bd=nil,1e9 local now=os.clock()
 	for o,t in pairs(objs) do
 		local isTarget = false
-		if S.farmAll then
-			if t.kind~="mon" then isTarget=true end 
-		else
-			if t.kind==ITEMS[cfg.target][1] then isTarget=true end
-		end
+		if S.farmAll then if t.kind~="mon" then isTarget=true end 
+		else if t.kind==ITEMS[cfg.target][1] then isTarget=true end end
 		
 		if isTarget and t.part and t.part.Parent and (bad[o] or 0)<now then
 			local d=(t.part.Position-hrp.Position).Magnitude if d<bd then best,bd=t,d end
@@ -309,12 +308,14 @@ local function farmStep()
 		stat("No items found") if now-lastMsg>10 then lastMsg=now notify("LINA","No items in map") end return
 	end
 	local back=hrp.CFrame stat((S.farmAll and "Getting ALL" or "Getting "..ITEMS[cfg.target][1]).." ("..math.floor(bd).."m)")
-	tpTo(best.part.Position) task.wait(0.25) collect(best.inst,best.part) task.wait(0.4)
+	tpTo(best.part.Position) task.wait(0.1) -- LEBIH CEPAT
+	collect(best.inst,best.part) task.wait(0.15) -- LEBIH CEPAT
+	
 	if taken(best.inst,best) then collected=collected+1 removeObj(best.inst) stat("Collected: "..collected) else bad[best.inst]=os.clock()+20 end
 	if S.sell and collected>=SELLN[cfg.sellIdx] then doSellAll(back) end
 end
 
-task.spawn(function() while alive do task.wait(0.3) if (S.farm or S.farmAll) then pcall(farmStep) end end end)
+task.spawn(function() while alive do task.wait(0.1) if (S.farm or S.farmAll) then pcall(farmStep) end end end)
 
 -- ISI TAB ESP
 local pE,pF,pM,pSet=pages[1],pages[2],pages[3],pages[4]
@@ -328,7 +329,7 @@ title(pE,"SETTINGS") num(pE,"ESP Distance",cfg,"dist",10,5000,"studs") num(pE,"A
 -- ISI TAB FARM
 title(pF,"AUTO FARM (TARGET)") btn(pF,"Target: "..ITEMS[cfg.target][1],function(b) cfg.target=cfg.target%#ITEMS+1 b.Text="Target: "..ITEMS[cfg.target][1] b.TextColor3=ITEMS[cfg.target][4] end).TextColor3=ITEMS[cfg.target][4]
 tog(pF,"Farm Target",S,"farm")
-title(pF,"AUTO FARM (SEMUA)") tog(pF,"Farm ALL Items",S,"farmAll", function(on) if on then S.farm = false end end, ACCENT) -- FITUR NO 5
+title(pF,"AUTO FARM (SEMUA)") tog(pF,"Farm ALL Items (Fast)",S,"farmAll", function(on) if on then S.farm = false end end, ACCENT) -- FITUR NO 5
 title(pF,"SELL") tog(pF,"AUTO SELL",S,"sell")
 btn(pF,"Sell every: "..SELLN[cfg.sellIdx].." items",function(b) cfg.sellIdx=cfg.sellIdx%#SELLN+1 b.Text="Sell every: "..SELLN[cfg.sellIdx].." items" end)
 btn(pF,"SELL ALL ITEMS",function() task.spawn(doSellAll) end,ACCENT)
@@ -337,7 +338,30 @@ btn(pF,"SELL ALL ITEMS",function() task.spawn(doSellAll) end,ACCENT)
 title(pM,"MOVE") tog(pM,"TP Walk",S,"tp") num(pM,"TP Speed",cfg,"tp",1,300,"studs/s")
 tog(pM, "Fullbright (Terang)", S, "fb", function(on) if on then game:GetService("Lighting").Ambient = Color3.fromRGB(255,255,255) game:GetService("Lighting").Brightness = 2 else game:GetService("Lighting").Ambient = Color3.fromRGB(0,0,0) game:GetService("Lighting").Brightness = 1 end end) -- FITUR NO 1
 tog(pM, "Anti-AFK", S, "afk", function(on) if on then lp.Idled:Connect(function() game:GetService("VirtualUser"):Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame) task.wait(1) game:GetService("VirtualUser"):Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame) end) end end) -- FITUR NO 3
-tog(pM, "Noclip (Tembus Tembok)", S, "noclip", function(on) if on then bind(RS.Stepped, function() local ch=lp.Character if ch then for _,v in pairs(ch:GetDescendants()) do if v:IsA("BasePart") and v.CanCollide then v.CanCollide=false end end end end) end end) -- FITUR NO 8
+
+-- NOCLIP FIXED
+tog(pM, "Noclip (Tembus Tembok)", S, "noclip", function(on) 
+	if on then 
+		bind(RS.Stepped, function() 
+			local ch=lp.Character 
+			if ch then 
+				for _,v in pairs(ch:GetDescendants()) do 
+					if v:IsA("BasePart") and v.CanCollide then 
+						v.CanCollide=false 
+						table.insert(noclipParts, v) -- Simpan part
+					end 
+				end 
+			end 
+		end) 
+	else 
+		-- Balikin CanCollide ke true
+		for _,v in pairs(noclipParts) do
+			pcall(function() v.CanCollide = true end)
+		end
+		noclipParts = {} 
+	end 
+end)
+
 btn(pM, "SERVER HOP (Pindah Server)", function() notify("LINA","Hopping server...") local TS=game:GetService("TeleportService") pcall(function() TS:Teleport(game.PlaceId, lp) end) end, C(235,120,0)) -- FITUR NO 7
 tog(pM, "Auto Heal (Makan Meat)", S, "autoheal", function(on) if on then task.spawn(function() while S.autoheal and alive do task.wait(1) local hum=lp.Character and lp.Character:FindFirstChildOfClass("Humanoid") if hum and hum.Health<hum.MaxHealth then local bp=lp:FindFirstChildOfClass("Backpack") if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") and (t.Name:lower():find("meat") or t.Name:lower():find("food")) then t.Parent=lp.Character task.wait(0.5) t.Parent=bp break end end end end end end) end end) -- FITUR NO 12
 
@@ -346,7 +370,7 @@ env.LINA_UNLOAD=unload
 btn(pM,"Unload Script",unload,C(130,35,35))
 
 -- TAB SET (WARNA & BAHASA)
-local LANGUAGES = { ["EN"] = {"ESP","Farm","Move","Settings","LINA v7.3"}, ["ID"] = {"ESP","Kebun","Gerak","Pengaturan","LINA v7.3"} }
+local LANGUAGES = { ["EN"] = {"ESP","Farm","Move","Settings","LINA v7.4"}, ["ID"] = {"ESP","Kebun","Gerak","Pengaturan","LINA v7.4"} }
 title(pSet, "UI THEME COLOR")
 local colors = { {"Red", C(235,70,50)}, {"Blue", C(50,120,235)}, {"Green", C(50,235,120)}, {"Purple", C(180,50,235)} }
 for _, cData in ipairs(colors) do btn(pSet, "Theme: "..cData[1], function(b) bar.BackgroundColor3 = cData[2] stroke.Color = cData[2] banner.BackgroundColor3 = cData[2] for k,p in ipairs(pages) do if p.Visible then tabBtns[k].BackgroundColor3 = cData[2] break end end end, cData[2]) end
@@ -361,6 +385,6 @@ bind(RS.Heartbeat,function(dt)
 	if S.tp then local ch=lp.Character local h=ch and ch:FindFirstChildOfClass("Humanoid") local hrp=ch and ch:FindFirstChild("HumanoidRootPart") if h and hrp and h.MoveDirection.Magnitude>0 then hrp.CFrame=hrp.CFrame+h.MoveDirection*(cfg.tp*dt) end end
 	acc=acc+dt if acc>=0.15 then acc=0 pcall(updateESP) end
 end)
-notify("LINA","READY v7.3! Harga & Fitur Baru Aktif.")
+notify("LINA","READY v7.4! Bug Fixed & Farm Cepat.")
 end)
 if not okRun then notify0("LINA ERROR",errRun) end
