@@ -22,7 +22,7 @@ local function notify(t,x)
 end
 local function C(r,g,b) return Color3.fromRGB(r,g,b) end
 
--- DAFTAR ITEM (Nama alternatif ditambahin)
+-- DAFTAR ITEM & HARGA
 local ITEMS={
 	{"Red Gold","red gold",150,C(255,40,70)},
 	{"Ruby","ruby",35,C(255,40,70)},
@@ -59,11 +59,11 @@ local ALERTCOL=C(255,120,0)
 local S={mon=false,alert=false,tp=false,farm=false,farmAll=false,sell=false,fb=false,afk=false,noclip=false,autoheal=false}
 local I={}
 for _,it in ipairs(ITEMS) do I[it[1]]=false end
-local cfg={target=2,tp=30,dist=500,alertD=60,sellIdx=3} -- Target Ruby
+local cfg={target=2,tp=30,dist=500,alertD=60,sellIdx=3}
 local SELLN={1,3,5,10,20}
 
 local conns,alive={},true
-local noclipParts={} -- Simpan part buat Noclip
+local noclipParts={}
 local function bind(sg,fn) local c=sg:Connect(fn) conns[#conns+1]=c return c end
 
 -- GUI ROOT
@@ -175,7 +175,6 @@ local function consider(o)
 	elseif o:IsA("Model") and o:FindFirstChildOfClass("Humanoid") then kind="mon" col=MONCOL
 	else 
 		for _,it in ipairs(ITEMS) do 
-			-- PAKE AWALAN & LEBIH LUAS
 			if l:find(it[2],1,true) or l:sub(1, string.len(it[2])) == it[2] then 
 				kind=it[1] col=it[4] price=it[3] break 
 			end 
@@ -183,7 +182,6 @@ local function consider(o)
 	end
 	if not kind then return end if inPlayer(o) or hasTracked(o) then return end
 	
-	-- FILTER UKURAN (Dilonggarin dikit biar Amethyst gede masuk)
 	if kind~="mon" then 
 		local p=getPart(o) if not p then return end 
 		local s=p.Size 
@@ -227,8 +225,12 @@ local function updateESP()
 	for i,t in ipairs(show) do
 		if i>45 then break end t.stamp=now if not t.vis then makeVis(t) end
 		t.vis.hl.Enabled=i<=28 t.vis.bb.Adornee=t.part
-		-- CUSTOM TEXT (NAMA, HARGA, JARAK)
+		
+        -- TEXT ESP & FIX NAMA MONSTER
 		local txt = t.kind
+		if t.kind == "mon" and t.hum and t.hum.DisplayName ~= "" then
+			txt = t.hum.DisplayName
+		end
 		if t.price then txt = txt.." ("..t.price.." Gold)" end
 		txt = txt.."\n"..math.floor(t.d).."m"
 		if t.hum and t.hum.Parent then txt=txt.." | HP "..math.floor(t.hum.Health) end
@@ -293,7 +295,7 @@ end
 -- LOGIKA FARM CEPAT & AMAN
 local function farmStep()
 	if selling then return end local hrp=getHrp() if not hrp then return end 
-	if danger<40 then stat("Monster nearby! Paused") return end -- ANTI MONSTER: Pause kalau monster < 40m
+	if danger<40 then stat("Monster nearby! Paused") return end
 	local best,bd=nil,1e9 local now=os.clock()
 	for o,t in pairs(objs) do
 		local isTarget = false
@@ -308,8 +310,8 @@ local function farmStep()
 		stat("No items found") if now-lastMsg>10 then lastMsg=now notify("LINA","No items in map") end return
 	end
 	local back=hrp.CFrame stat((S.farmAll and "Getting ALL" or "Getting "..ITEMS[cfg.target][1]).." ("..math.floor(bd).."m)")
-	tpTo(best.part.Position) task.wait(0.1) -- LEBIH CEPAT
-	collect(best.inst,best.part) task.wait(0.15) -- LEBIH CEPAT
+	tpTo(best.part.Position) task.wait(0.1) 
+	collect(best.inst,best.part) task.wait(0.15) 
 	
 	if taken(best.inst,best) then collected=collected+1 removeObj(best.inst) stat("Collected: "..collected) else bad[best.inst]=os.clock()+20 end
 	if S.sell and collected>=SELLN[cfg.sellIdx] then doSellAll(back) end
@@ -329,17 +331,16 @@ title(pE,"SETTINGS") num(pE,"ESP Distance",cfg,"dist",10,5000,"studs") num(pE,"A
 -- ISI TAB FARM
 title(pF,"AUTO FARM (TARGET)") btn(pF,"Target: "..ITEMS[cfg.target][1],function(b) cfg.target=cfg.target%#ITEMS+1 b.Text="Target: "..ITEMS[cfg.target][1] b.TextColor3=ITEMS[cfg.target][4] end).TextColor3=ITEMS[cfg.target][4]
 tog(pF,"Farm Target",S,"farm")
-title(pF,"AUTO FARM (SEMUA)") tog(pF,"Farm ALL Items (Fast)",S,"farmAll", function(on) if on then S.farm = false end end, ACCENT) -- FITUR NO 5
+title(pF,"AUTO FARM (SEMUA)") tog(pF,"Farm ALL Items (Fast)",S,"farmAll", function(on) if on then S.farm = false end end, ACCENT) 
 title(pF,"SELL") tog(pF,"AUTO SELL",S,"sell")
 btn(pF,"Sell every: "..SELLN[cfg.sellIdx].." items",function(b) cfg.sellIdx=cfg.sellIdx%#SELLN+1 b.Text="Sell every: "..SELLN[cfg.sellIdx].." items" end)
 btn(pF,"SELL ALL ITEMS",function() task.spawn(doSellAll) end,ACCENT)
 
 -- ISI TAB MOVE
 title(pM,"MOVE") tog(pM,"TP Walk",S,"tp") num(pM,"TP Speed",cfg,"tp",1,300,"studs/s")
-tog(pM, "Fullbright (Terang)", S, "fb", function(on) if on then game:GetService("Lighting").Ambient = Color3.fromRGB(255,255,255) game:GetService("Lighting").Brightness = 2 else game:GetService("Lighting").Ambient = Color3.fromRGB(0,0,0) game:GetService("Lighting").Brightness = 1 end end) -- FITUR NO 1
-tog(pM, "Anti-AFK", S, "afk", function(on) if on then lp.Idled:Connect(function() game:GetService("VirtualUser"):Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame) task.wait(1) game:GetService("VirtualUser"):Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame) end) end end) -- FITUR NO 3
+tog(pM, "Fullbright (Terang)", S, "fb", function(on) if on then game:GetService("Lighting").Ambient = Color3.fromRGB(255,255,255) game:GetService("Lighting").Brightness = 2 else game:GetService("Lighting").Ambient = Color3.fromRGB(0,0,0) game:GetService("Lighting").Brightness = 1 end end) 
+tog(pM, "Anti-AFK", S, "afk", function(on) if on then lp.Idled:Connect(function() game:GetService("VirtualUser"):Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame) task.wait(1) game:GetService("VirtualUser"):Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame) end) end end) 
 
--- NOCLIP FIXED
 tog(pM, "Noclip (Tembus Tembok)", S, "noclip", function(on) 
 	if on then 
 		bind(RS.Stepped, function() 
@@ -348,13 +349,12 @@ tog(pM, "Noclip (Tembus Tembok)", S, "noclip", function(on)
 				for _,v in pairs(ch:GetDescendants()) do 
 					if v:IsA("BasePart") and v.CanCollide then 
 						v.CanCollide=false 
-						table.insert(noclipParts, v) -- Simpan part
+						table.insert(noclipParts, v) 
 					end 
 				end 
 			end 
 		end) 
 	else 
-		-- Balikin CanCollide ke true
 		for _,v in pairs(noclipParts) do
 			pcall(function() v.CanCollide = true end)
 		end
@@ -362,8 +362,8 @@ tog(pM, "Noclip (Tembus Tembok)", S, "noclip", function(on)
 	end 
 end)
 
-btn(pM, "SERVER HOP (Pindah Server)", function() notify("LINA","Hopping server...") local TS=game:GetService("TeleportService") pcall(function() TS:Teleport(game.PlaceId, lp) end) end, C(235,120,0)) -- FITUR NO 7
-tog(pM, "Auto Heal (Makan Meat)", S, "autoheal", function(on) if on then task.spawn(function() while S.autoheal and alive do task.wait(1) local hum=lp.Character and lp.Character:FindFirstChildOfClass("Humanoid") if hum and hum.Health<hum.MaxHealth then local bp=lp:FindFirstChildOfClass("Backpack") if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") and (t.Name:lower():find("meat") or t.Name:lower():find("food")) then t.Parent=lp.Character task.wait(0.5) t.Parent=bp break end end end end end end) end end) -- FITUR NO 12
+btn(pM, "SERVER HOP (Pindah Server)", function() notify("LINA","Hopping server...") local TS=game:GetService("TeleportService") pcall(function() TS:Teleport(game.PlaceId, lp) end) end, C(235,120,0)) 
+tog(pM, "Auto Heal (Makan Meat)", S, "autoheal", function(on) if on then task.spawn(function() while S.autoheal and alive do task.wait(1) local hum=lp.Character and lp.Character:FindFirstChildOfClass("Humanoid") if hum and hum.Health<hum.MaxHealth then local bp=lp:FindFirstChildOfClass("Backpack") if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") and (t.Name:lower():find("meat") or t.Name:lower():find("food")) then t.Parent=lp.Character task.wait(0.5) t.Parent=bp break end end end end end end) end end) 
 
 local function unload() alive=false for _,c in ipairs(conns) do pcall(function() c:Disconnect() end) end for o in pairs(objs) do pcall(removeObj,o) end pcall(function() gui:Destroy() end) end
 env.LINA_UNLOAD=unload
@@ -385,6 +385,6 @@ bind(RS.Heartbeat,function(dt)
 	if S.tp then local ch=lp.Character local h=ch and ch:FindFirstChildOfClass("Humanoid") local hrp=ch and ch:FindFirstChild("HumanoidRootPart") if h and hrp and h.MoveDirection.Magnitude>0 then hrp.CFrame=hrp.CFrame+h.MoveDirection*(cfg.tp*dt) end end
 	acc=acc+dt if acc>=0.15 then acc=0 pcall(updateESP) end
 end)
-notify("LINA","READY v7.4! Bug Fixed & Farm Cepat.")
+notify("LINA","READY v7.4! Bug Fixed & Monster Name Fixed.")
 end)
 if not okRun then notify0("LINA ERROR",errRun) end
