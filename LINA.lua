@@ -226,32 +226,34 @@ local function updateESP()
 		if i>45 then break end t.stamp=now if not t.vis then makeVis(t) end
 		t.vis.hl.Enabled=i<=28 t.vis.bb.Adornee=t.part
 		
-		-- TEXT ESP & FIX NAMA MONSTER (DEEP SCAN)
+		-- TEXT ESP & FIX NAMA MONSTER (PAKE DAFTAR MON_LIST)
 		local txt = t.kind
 		if t.kind == "mon" then
 			local realName = nil
+			
+			-- 1. Cek dari DisplayName
 			if t.hum and t.hum.DisplayName ~= "" and t.hum.DisplayName ~= "Mon" then
 				realName = t.hum.DisplayName
 			end
+			
+			-- 2. Cek dari BillboardGui (Tapi HANYA ambil kalau namanya ada di MON_LIST)
 			if not realName then
 				for _, obj in ipairs(t.inst:GetDescendants()) do
 					if obj:IsA("TextLabel") and obj.Text ~= "" and #obj.Text < 30 then
-						realName = obj.Text
-						break
+						local txtCheck = obj.Text:lower()
+						if MON[txtCheck] or txtCheck:find("gus") or txtCheck:find("man") then
+							realName = obj.Text
+							break
+						end
 					end
 				end
 			end
-			if not realName then
-				for _, obj in ipairs(t.inst:GetChildren()) do
-					if obj:IsA("StringValue") or obj:IsA("ObjectValue") then
-						realName = obj.Value and obj.Value.Name or obj.Name
-						break
-					end
-				end
-			end
+			
+			-- 3. Kalau nama asli modelnya bukan "Mon", pakai itu
 			if not realName and t.inst.Name ~= "Mon" and t.inst.Name ~= "mon" then
 				realName = t.inst.Name
 			end
+			
 			txt = realName or "Unknown Monster"
 		end
 		
@@ -409,6 +411,6 @@ bind(RS.Heartbeat,function(dt)
 	if S.tp then local ch=lp.Character local h=ch and ch:FindFirstChildOfClass("Humanoid") local hrp=ch and ch:FindFirstChild("HumanoidRootPart") if h and hrp and h.MoveDirection.Magnitude>0 then hrp.CFrame=hrp.CFrame+h.MoveDirection*(cfg.tp*dt) end end
 	acc=acc+dt if acc>=0.15 then acc=0 pcall(updateESP) end
 end)
-notify("LINA","READY v7.5! Deep Scan & Bug Fixed.")
+notify("LINA","READY v7.5! Bug Fixed & Monster Name Fixed.")
 end)
 if not okRun then notify0("LINA ERROR",errRun) end
