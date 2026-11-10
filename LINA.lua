@@ -1,10 +1,10 @@
--- LINA v7.5 FIX | Lethal Ape
+-- LINA v7.6 FIX | Lethal Ape
 local function notify0(t,x)
 	pcall(function()
 		game:GetService("StarterGui"):SetCore("SendNotification",{Title=t,Text=tostring(x):sub(1,190),Duration=8})
 	end)
 end
-notify0("LINA","Loading LINA v7.5...")
+notify0("LINA","Loading LINA v7.6...")
 
 local okRun,errRun=pcall(function()
 local Players=game:GetService("Players")
@@ -22,7 +22,7 @@ local function notify(t,x)
 end
 local function C(r,g,b) return Color3.fromRGB(r,g,b) end
 
--- DAFTAR ITEM & HARGA
+-- DAFTAR ITEM (Nama alternatif diperluas buat Crystal)
 local ITEMS={
 	{"Red Gold","red gold",150,C(255,40,70)},
 	{"Ruby","ruby",35,C(255,40,70)},
@@ -68,7 +68,7 @@ local function bind(sg,fn) local c=sg:Connect(fn) conns[#conns+1]=c return c end
 
 -- GUI ROOT
 local gui=Instance.new("ScreenGui")
-gui.Name="LINA_V75" gui.ResetOnSpawn=false gui.DisplayOrder=999
+gui.Name="LINA_V76" gui.ResetOnSpawn=false gui.DisplayOrder=999
 local done=false
 for _,g in ipairs({
 	function() return lp:WaitForChild("PlayerGui",5) end,
@@ -76,7 +76,7 @@ for _,g in ipairs({
 	function() return game:GetService("CoreGui") end}) do
 	local ok,p=pcall(g)
 	if ok and p and not done then
-		pcall(function() local o=p:FindFirstChild("LINA_V75") if o then o:Destroy() end end)
+		pcall(function() local o=p:FindFirstChild("LINA_V76") if o then o:Destroy() end end)
 		if pcall(function() gui.Parent=p end) and gui.Parent==p then done=true end
 	end
 end
@@ -98,7 +98,7 @@ local stroke = mk("UIStroke",{Color=ACCENT,Thickness=1.4,Transparency=0.35},main
 local bar=mk("Frame",{Size=UDim2.new(1,0,0,4),BackgroundColor3=ACCENT,BorderSizePixel=0},main)
 corner(bar,4)
 
-local header=mk("TextLabel",{Size=UDim2.new(1,-50,0,22),Position=UDim2.fromOffset(12,6),BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,Text="LINA  v7.5",TextColor3=WHITE,Font=Enum.Font.GothamBold,TextSize=15},main)
+local header=mk("TextLabel",{Size=UDim2.new(1,-50,0,22),Position=UDim2.fromOffset(12,6),BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,Text="LINA  v7.6",TextColor3=WHITE,Font=Enum.Font.GothamBold,TextSize=15},main)
 local status=mk("TextLabel",{Size=UDim2.new(1,-20,0,14),Position=UDim2.fromOffset(12,26),BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left,Text="Status: idle",TextColor3=C(120,255,160),Font=Enum.Font.Code,TextSize=11},main)
 local function stat(x) status.Text=tostring(x):sub(1,44) end
 
@@ -182,10 +182,12 @@ local function consider(o)
 	end
 	if not kind then return end if inPlayer(o) or hasTracked(o) then return end
 	
+	-- FILTER UKURAN (Diperluas jadi 100 & bypass buat Crystal biar ga ke-skip)
 	if kind~="mon" then 
 		local p=getPart(o) if not p then return end 
 		local s=p.Size 
-		if math.max(s.X,s.Y,s.Z)>40 then return end 
+		local isCrystal = l:find("crystal") or l:find("amethyst")
+		if not isCrystal and math.max(s.X,s.Y,s.Z)>100 then return end 
 		if p.Transparency>=0.95 and allHidden(o) then return end 
 	end
 	addObj(o,kind,col,o.Name,price)
@@ -226,34 +228,20 @@ local function updateESP()
 		if i>45 then break end t.stamp=now if not t.vis then makeVis(t) end
 		t.vis.hl.Enabled=i<=28 t.vis.bb.Adornee=t.part
 		
-		-- TEXT ESP & FIX NAMA MONSTER (PAKE DAFTAR MON_LIST)
+		-- TEXT ESP & FIX NAMA MONSTER
 		local txt = t.kind
 		if t.kind == "mon" then
 			local realName = nil
-			
-			-- 1. Cek dari DisplayName
-			if t.hum and t.hum.DisplayName ~= "" and t.hum.DisplayName ~= "Mon" then
-				realName = t.hum.DisplayName
-			end
-			
-			-- 2. Cek dari BillboardGui (Tapi HANYA ambil kalau namanya ada di MON_LIST)
+			if t.hum and t.hum.DisplayName ~= "" and t.hum.DisplayName ~= "Mon" then realName = t.hum.DisplayName end
 			if not realName then
 				for _, obj in ipairs(t.inst:GetDescendants()) do
 					if obj:IsA("TextLabel") and obj.Text ~= "" and #obj.Text < 30 then
 						local txtCheck = obj.Text:lower()
-						if MON[txtCheck] or txtCheck:find("gus") or txtCheck:find("man") then
-							realName = obj.Text
-							break
-						end
+						if MON[txtCheck] or txtCheck:find("gus") or txtCheck:find("man") then realName = obj.Text break end
 					end
 				end
 			end
-			
-			-- 3. Kalau nama asli modelnya bukan "Mon", pakai itu
-			if not realName and t.inst.Name ~= "Mon" and t.inst.Name ~= "mon" then
-				realName = t.inst.Name
-			end
-			
+			if not realName and t.inst.Name ~= "Mon" and t.inst.Name ~= "mon" then realName = t.inst.Name end
 			txt = realName or "Unknown Monster"
 		end
 		
@@ -271,13 +259,24 @@ local function getHrp() local c=lp.Character return c and c:FindFirstChild("Huma
 local function tpTo(pos) local hrp=getHrp() if not hrp then return end hrp.CFrame=CFrame.new(pos+Vector3.new(0,3,0)) hrp.AssemblyLinearVelocity=Vector3.new() end
 local function fireOne(d)
 	local ok=false
-	if d:IsA("ProximityPrompt") and fireproximityprompt then pcall(function() d.HoldDuration=0 d.RequiresLineOfSight=false d.MaxActivationDistance=40 end) pcall(fireproximityprompt,d) ok=true
+	if d:IsA("ProximityPrompt") and fireproximityprompt then pcall(function() d.HoldDuration=0 d.RequiresLineOfSight=false d.MaxActivationDistance=60 end) pcall(fireproximityprompt,d) ok=true
 	elseif d:IsA("ClickDetector") and fireclickdetector then pcall(fireclickdetector,d) ok=true end
 	return ok
 end
+
+-- COLLECT DIPERKUAT (SCAN SAMPAI KE PARENT & SEPUPUNYA)
 local function collect(o,part)
-	local fired=false local list=o:GetDescendants() list[#list+1]=o
-	if o.Parent then for _,c in ipairs(o.Parent:GetChildren()) do list[#list+1]=c end end
+	local fired=false
+	local list=o:GetDescendants() 
+	list[#list+1]=o
+	if o.Parent then 
+		for _,c in ipairs(o.Parent:GetChildren()) do 
+			list[#list+1]=c 
+			if c:IsA("Model") then
+				for _,c2 in ipairs(c:GetDescendants()) do list[#list+1]=c2 end
+			end
+		end 
+	end
 	for _,d in ipairs(list) do if fireOne(d) then fired=true end end
 	if not fired and firetouchinterest then local hrp=getHrp() if hrp and part then pcall(function() firetouchinterest(hrp,part,0) task.wait(0.05) firetouchinterest(hrp,part,1) end) end end
 end
@@ -339,7 +338,7 @@ local function farmStep()
 	tpTo(best.part.Position) task.wait(0.1) 
 	collect(best.inst,best.part) task.wait(0.15) 
 	
-	if taken(best.inst,best) then collected=collected+1 removeObj(best.inst) stat("Collected: "..collected) else bad[best.inst]=os.clock()+20 end
+	if taken(best.inst,best) then collected=collected+1 removeObj(best.inst) stat("Collected: "..collected) else bad[best.inst]=os.clock()+10 end
 	if S.sell and collected>=SELLN[cfg.sellIdx] then doSellAll(back) end
 end
 
@@ -396,7 +395,7 @@ env.LINA_UNLOAD=unload
 btn(pM,"Unload Script",unload,C(130,35,35))
 
 -- TAB SET (WARNA & BAHASA)
-local LANGUAGES = { ["EN"] = {"ESP","Farm","Move","Settings","LINA v7.5"}, ["ID"] = {"ESP","Kebun","Gerak","Pengaturan","LINA v7.5"} }
+local LANGUAGES = { ["EN"] = {"ESP","Farm","Move","Settings","LINA v7.6"}, ["ID"] = {"ESP","Kebun","Gerak","Pengaturan","LINA v7.6"} }
 title(pSet, "UI THEME COLOR")
 local colors = { {"Red", C(235,70,50)}, {"Blue", C(50,120,235)}, {"Green", C(50,235,120)}, {"Purple", C(180,50,235)} }
 for _, cData in ipairs(colors) do btn(pSet, "Theme: "..cData[1], function(b) bar.BackgroundColor3 = cData[2] stroke.Color = cData[2] banner.BackgroundColor3 = cData[2] for k,p in ipairs(pages) do if p.Visible then tabBtns[k].BackgroundColor3 = cData[2] break end end end, cData[2]) end
@@ -411,6 +410,6 @@ bind(RS.Heartbeat,function(dt)
 	if S.tp then local ch=lp.Character local h=ch and ch:FindFirstChildOfClass("Humanoid") local hrp=ch and ch:FindFirstChild("HumanoidRootPart") if h and hrp and h.MoveDirection.Magnitude>0 then hrp.CFrame=hrp.CFrame+h.MoveDirection*(cfg.tp*dt) end end
 	acc=acc+dt if acc>=0.15 then acc=0 pcall(updateESP) end
 end)
-notify("LINA","READY v7.5! Bug Fixed & Monster Name Fixed.")
+notify("LINA","READY v7.6! Crystal Bug Fixed.")
 end)
 if not okRun then notify0("LINA ERROR",errRun) end
