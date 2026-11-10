@@ -305,7 +305,18 @@ local function farmStep()
 		end
 	end
 	if not best then
-		stat("No items found") if now-lastMsg>10 then lastMsg=now notify("LINA","No items in map") end return
+		local hasVisible = false
+		for o,t in pairs(objs) do
+			if S.farmAll and t.kind~="mon" then hasVisible = true break end
+			if not S.farmAll and t.kind==ITEMS[cfg.target][1] then hasVisible = true break end
+		end
+		if hasVisible then
+			stat("Item detected, but blocked/failed")
+		else
+			stat("No items found") 
+			if now-lastMsg>10 then lastMsg=now notify("LINA","No items in map") end 
+		end
+		return
 	end
 	local back=hrp.CFrame stat((S.farmAll and "Getting ALL" or "Getting "..ITEMS[cfg.target][1]).." ("..math.floor(bd).."m)")
 	tpTo(best.part.Position) task.wait(0.1) 
