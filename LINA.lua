@@ -1,4 +1,4 @@
--- LILA HUB | GALAXY EDITION | FIXED BY LIKA
+-- LILA HUB | GALAXY EDITION | V.2 FIXED (PART 1)
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -35,7 +35,6 @@ local SELLN={1,3,5,10,20}
 local conns,alive={},true
 local function bind(sg,fn) local c=sg:Connect(fn) conns[#conns+1]=c return c end
 
--- UI ROOT
 local gui=Instance.new("ScreenGui") gui.Name="LILA_HUB" gui.ResetOnSpawn=false gui.DisplayOrder=999
 local done=false
 for _,g in ipairs({function() return lp:WaitForChild("PlayerGui",5) end, function() return gethui() end, function() return game:GetService("CoreGui") end}) do
@@ -56,7 +55,7 @@ corner(main,10)
 local bgGrad = mk("UIGradient",{Color=ColorSequence.new(C(60,20,80),C(10,5,15)),Rotation=45},main)
 
 local topBar=mk("Frame",{Size=UDim2.new(1,0,0,30),BackgroundColor3=C(30,20,45),BackgroundTransparency=0.5},main) corner(topBar,10)
-mk("TextLabel",{Size=UDim2.new(1,-100,1,0),Position=UDim2.fromOffset(10,0),BackgroundTransparency=1,Text="✖  Lila Hub",TextColor3=WHITE,Font=Enum.Font.GothamBold,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left},topBar)
+mk("TextLabel",{Size=UDim2.new(1,-100,1,0),Position=UDim2.fromOffset(10,0),BackgroundTransparency=1,Text="✖  Lila Hub V.2",TextColor3=WHITE,Font=Enum.Font.GothamBold,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left},topBar)
 local closeBtn=mk("TextButton",{Size=UDim2.fromOffset(25,25),Position=UDim2.new(1,-30,0,2),BackgroundTransparency=1,Text="X",TextColor3=WHITE,Font=Enum.Font.GothamBold},topBar)
 bind(closeBtn.MouseButton1Click,function() gui.Enabled=false end)
 
@@ -85,6 +84,8 @@ makeSideBtn("Player", "👤", 10, "Player")
 makeSideBtn("Visuals", "👁️", 50, "Visuals")
 makeSideBtn("Farm", "🌾", 90, "Farm")
 makeSideBtn("Settings", "⚙️", 130, "Settings")
+-- LILA HUB | GALAXY EDITION | V.2 FIXED (PART 2)
+
 local function makeToggle(parent, text, tbl, key, fn)
 	local row = mk("Frame",{Size=UDim2.new(1,-10,0,40),BackgroundColor3=C(35,25,45),BackgroundTransparency=0.2},parent) corner(row,8)
 	mk("TextLabel",{Size=UDim2.new(1,-80,1,0),Position=UDim2.fromOffset(15,0),BackgroundTransparency=1,Text=text,TextColor3=WHITE,Font=Enum.Font.GothamBold,TextSize=14,TextXAlignment=Enum.TextXAlignment.Left},row)
@@ -110,8 +111,8 @@ local function makeButton(parent, text, fn, color)
 	local btn = mk("TextButton",{Size=UDim2.new(1,-10,0,40),BackgroundColor3=color or ACCENT,Text=text,TextColor3=WHITE,Font=Enum.Font.GothamBold,TextSize=14},parent) corner(btn,8)
 	bind(btn.MouseButton1Click,function() fn() end)
 end
+-- LILA HUB | GALAXY EDITION | V.2 FIXED (PART 3)
 
--- LOGIKA UTAMA
 local objs={} local danger=1e9
 local function getPart(o) if o:IsA("BasePart") then return o end if o:IsA("Model") then return o.PrimaryPart or o:FindFirstChild("HumanoidRootPart") or o:FindFirstChildWhichIsA("BasePart",true) end end
 local function inPlayer(o) local m=o while m and m~=workspace do if Players:GetPlayerFromCharacter(m) then return true end m=m.Parent end return false end
@@ -144,6 +145,7 @@ local function consider(o)
 end
 task.spawn(function() local n=0 for _,o in ipairs(workspace:GetDescendants()) do if not alive then return end pcall(consider,o) n=n+1 if n%300==0 then task.wait() end end end)
 bind(workspace.DescendantAdded,function(o) task.defer(pcall,consider,o) end)
+
 local function makeVis(t)
 	local hl=Instance.new("Highlight") hl.Adornee=t.inst hl.FillColor=t.col hl.OutlineColor=t.col hl.FillTransparency=0.55 hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop hl.Parent=gui
 	local bb=Instance.new("BillboardGui") bb.Adornee=t.part bb.AlwaysOnTop=true bb.Size=UDim2.fromOffset(150,35) bb.StudsOffset=Vector3.new(0,3,0) bb.Parent=gui
@@ -167,16 +169,48 @@ local function updateESP()
 	for i,t in ipairs(show) do
 		if i>45 then break end t.stamp=now if not t.vis then makeVis(t) end
 		t.vis.hl.Enabled=i<=28 t.vis.bb.Adornee=t.part
-		local txt=t.kind if t.price then txt=txt.." ("..t.price.."G)" end
-		t.vis.label.Text=txt.."\n"..math.floor(t.d).."m"
+		local txt = t.kind
+		if t.kind == "mon" then
+			local realName = nil
+			if t.hum and t.hum.DisplayName ~= "" and t.hum.DisplayName ~= "Mon" then realName = t.hum.DisplayName end
+			if not realName then
+				for _, obj in ipairs(t.inst:GetDescendants()) do
+					if obj:IsA("TextLabel") and obj.Text ~= "" and #obj.Text < 30 then
+						local txtCheck = obj.Text:lower()
+						if MON[txtCheck] or txtCheck:find("gus") or txtCheck:find("man") then realName = obj.Text break end
+					end
+				end
+			end
+			if not realName and t.inst.Name ~= "Mon" and t.inst.Name ~= "mon" then realName = t.inst.Name end
+			txt = realName or "Unknown Monster"
+		end
+		if t.price then txt = txt.." ("..t.price.."G)" end
+		txt = txt.."\n"..math.floor(t.d).."m"
+		t.vis.label.Text=txt
 	end
 	for _,t in pairs(objs) do if t.vis and t.stamp~=now then destroyVis(t) end end
 end
+-- LILA HUB | GALAXY EDITION | V.2 FIXED (PART 4)
 
 local bad={} local lastMsg=0
 local function getHrp() local c=lp.Character return c and c:FindFirstChild("HumanoidRootPart") end
 local function tpTo(pos) local hrp=getHrp() if not hrp then return end hrp.CFrame=CFrame.new(pos+Vector3.new(0,3,0)) hrp.AssemblyLinearVelocity=Vector3.new() end
 local function fireOne(d) local ok=false if d:IsA("ProximityPrompt") and fireproximityprompt then pcall(function() d.HoldDuration=0 d.RequiresLineOfSight=false d.MaxActivationDistance=60 end) pcall(fireproximityprompt,d) ok=true elseif d:IsA("ClickDetector") and fireclickdetector then pcall(fireclickdetector,d) ok=true end return ok end
+
+local function collect(o,part)
+	local fired=false
+	local list = {o}
+	local p1 = o.Parent
+	if p1 and p1 ~= workspace then
+		table.insert(list, p1)
+		for _, c in ipairs(p1:GetDescendants()) do table.insert(list, c) end
+		local p2 = p1.Parent
+		if p2 and p2 ~= workspace then for _, c in ipairs(p2:GetDescendants()) do table.insert(list, c) end end
+	end
+	for _, d in ipairs(o:GetDescendants()) do table.insert(list, d) end
+	for _,d in ipairs(list) do if fireOne(d) then fired=true end end
+	if not fired and firetouchinterest then local hrp=getHrp() if hrp and part then pcall(function() firetouchinterest(hrp,part,0) task.wait(0.05) firetouchinterest(hrp,part,1) end) end end
+end
 
 local function farmStep()
 	if danger<40 then return end local hrp=getHrp() if not hrp then return end
@@ -188,10 +222,8 @@ local function farmStep()
 		end
 	end
 	if not best then if now-lastMsg>10 then lastMsg=now notify("LILA","No items found") end return end
-	tpTo(best.part.Position) task.wait(0.1)
-	local list={best.inst} if best.inst.Parent then table.insert(list, best.inst.Parent) end
-	for _,d in ipairs(list) do if fireOne(d) then break end end
-	task.wait(0.15)
+	tpTo(best.part.Position) task.wait(0.15)
+	collect(best.inst,best.part) task.wait(0.15)
 	if taken(best.inst,best) then removeObj(best.inst) else bad[best.inst]=os.clock()+10 end
 end
 
@@ -220,7 +252,6 @@ local function doSellAll()
 	notify("LILA","Sell done!")
 end
 
--- FLY & LOOP
 local noclipParts={}
 local flyBV=Instance.new("BodyVelocity") flyBV.MaxForce=Vector3.new(1e9,1e9,1e9) flyBV.Parent=nil
 local flyBG=Instance.new("BodyGyro") flyBG.MaxTorque=Vector3.new(1e9,1e9,1e9) flyBG.P=1000 flyBG.D=50 flyBG.Parent=nil
@@ -251,7 +282,6 @@ task.spawn(function() while alive do task.wait(0.1) if S.farm or S.farmAll then 
 
 UIS.JumpRequest:Connect(function() if S.infjump and lp.Character then local hum=lp.Character:FindFirstChildOfClass("Humanoid") if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
--- ISI TAB UI (Ditaruh paling bawah biar ga error)
 makeToggle(pPlayer, "Fly", S, "fly")
 makeInput(pPlayer, "Fly Speed", cfg, "flySpeed")
 makeToggle(pPlayer, "Noclip", S, "noclip")
@@ -285,4 +315,4 @@ _G.LINA_UNLOAD = unload
 makeButton(pSet, "Unload Script", unload, C(130,35,35))
 
 switchTab("Player")
-notify("LILA", "Galaxy UI Success Loaded!")
+notify("LILA", "Galaxy UI V.2 Loaded!")
