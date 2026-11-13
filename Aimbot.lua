@@ -1,9 +1,10 @@
 --[[
 ╔═══════════════════════════════════════════════════╗
-║   INDONESIA TEST HUB v4.5 — ARSENAL TEAM-AWARE    ║
+║   INDONESIA TEST HUB v4.6 — WEAPON FIX EDITION    ║
 ║   Dev: LIKA (DeepSeek) ♀                          ║
-║   Fitur: Team Check (2-4 tim) + Prediction + ESP  ║
-║   Support: R15 & R6 | Red/Blue/Green/Yellow       ║
+║   Fitur: Weapon-aware aim + Prediction + Team     ║
+║          + ESP + FOV Circle + Wall Check          ║
+║   Support: R15 & R6 | 4-part build                ║
 ║   UI Toggle: [RightShift]                         ║
 ╚═══════════════════════════════════════════════════╝
 --]]
@@ -30,7 +31,6 @@ local CFG = {
     headOnly         = true,
     requireWallCheck = true,
 
-    -- TEAM
     ignoreTeammates  = true,
     showTeammatesESP = true,
 
@@ -45,54 +45,47 @@ local CFG = {
 -- AIM TUNING
 -- ============================================================
 local AIM_TUNE = {
-    prediction   = 0.15,
-    snapAngleDeg = 3,
-    snapDistance = 50,
-    headOffset   = Vector3.new(0, 0, 0),
-    rotateBody   = true,
-    minLerp      = 0.5,
+    prediction      = 0.15,
+    snapAngleDeg    = 3,
+    snapDistance    = 50,
+    headOffset      = Vector3.new(0, 0, 0),
+    weaponOffset    = Vector3.new(0, 0.25, 0),   -- ← offset kalau target pegang weapon
+    rotateBody      = true,
+    minLerp         = 0.5,
+    losTolerance    = 1.2,                        -- ← toleransi raycast (weapon visual)
 }
 
 -- ============================================================
--- TEAM UTIL (ARSENAL-AWARE)
+-- TEAM UTIL
 -- ============================================================
 local TEAM_COLORS = {
     ReallyRed    = Color3.fromRGB(255, 60, 60),
     ReallyBlue   = Color3.fromRGB(60, 120, 255),
     LimeGreen    = Color3.fromRGB(60, 220, 60),
     NewYeller    = Color3.fromRGB(255, 220, 60),
-    -- fallback nama lain
     Red          = Color3.fromRGB(255, 60, 60),
     Blue         = Color3.fromRGB(60, 120, 255),
     Green        = Color3.fromRGB(60, 220, 60),
     Yellow       = Color3.fromRGB(255, 220, 60),
 }
 
--- Ambil warna team dari TeamColor atau nama
 local function getTeamColor(team)
     if not team then return Color3.fromRGB(180, 180, 180) end
-    -- Coba dari TeamColor dulu
     local c = team.TeamColor and team.TeamColor.Color
-    if c and (c.R + c.G + c.B) > 0.05 then
-        return c
-    end
-    -- Fallback: nama team
+    if c and (c.R + c.G + c.B) > 0.05 then return c end
     return TEAM_COLORS[team.Name] or Color3.fromRGB(180, 180, 180)
 end
 
--- Cek teammate
 local function isTeammate(p)
     if not p or p == LocalPlayer then return false end
-    if not LocalPlayer.Team then return false end  -- FFA
+    if not LocalPlayer.Team then return false end
     if not p.Team then return false end
     return p.Team == LocalPlayer.Team
 end
 
--- Cek mode tim saat ini
 local function getTeamMode()
     if not LocalPlayer.Team then return "FFA" end
-    local teams = {}
-    local seen = {}
+    local teams, seen = {}, {}
     for _, p in ipairs(Players:GetPlayers()) do
         if p.Team and not seen[p.Team] then
             seen[p.Team] = true
@@ -111,14 +104,25 @@ local function isAlive(p)
     return h and h.Health > 0 or false
 end
 
+-- Return head + attachment (untuk aim point konsisten)
 local function getHead(c)
     if not c then return nil end
-    local h = c:FindFirstChild("Head")
-    if h and h:IsA("BasePart") then return h end
-    for _, d in ipairs(c:GetDescendants()) do
-        if d:IsA("BasePart") and d.Name == "Head" then return d end
+    local head = c:FindFirstChild("Head")
+    if not head or not head:IsA("BasePart") then
+        for _, d in ipairs(c:GetDescendants()) do
+            if d:IsA("BasePart") and d.Name == "Head" then head = d; break end
+        end
     end
-    return nil
+    if not head then return nil end
+
+    local att = head:FindFirstChild("AimPoint")
+    if not att then
+        att = Instance.new("Attachment")
+        att.Name = "AimPoint"
+        att.Position = Vector3.new(0, 0, 0)
+        att.Parent = head
+    end
+    return head, att
 end
 
 local function getTorso(c)
@@ -132,18 +136,39 @@ local function getTorso(c)
     return c:FindFirstChild("Torso")
 end
 
+-- WALL CHECK — filter tool/weapon biar Handle nggak ngeblok
 local function hasLOS(fromPos, toPart, ignore)
     if not toPart then return false end
     local p = RaycastParams.new()
     p.FilterType = Enum.RaycastFilterType.Exclude
-    p.FilterDescendantsInstances = ignore or {}
+
+    local filter = {}
+    for _, v in ipairs(ignore or {}) do table.insert(filter, v) end
+
+    local tChar = toPart.Parent
+    if tChar then
+        for _, desc in ipairs(tChar:GetDescendants()) do
+            if desc:IsA("Tool") or desc.Name == "Handle" then
+                table.insert(filter, desc)
+            end
+        end
+    end
+    if LocalPlayer.Character then
+        for _, desc in ipairs(LocalPlayer.Character:GetDescendants()) do
+            if desc:IsA("Tool") or desc.Name == "Handle" then
+                table.insert(filter, desc)
+            end
+        end
+    end
+
+    p.FilterDescendantsInstances = filter
     p.IgnoreWater = true
+
     local r = workspace:Raycast(fromPos, toPart.Position - fromPos, p)
     if not r then return true end
     if r.Instance == toPart then return true end
-    local tChar = toPart.Parent
     if tChar and r.Instance:IsDescendantOf(tChar) then return true end
-    if (r.Position - toPart.Position).Magnitude <= 0.8 then return true end
+    if (r.Position - toPart.Position).Magnitude <= AIM_TUNE.losTolerance then return true end
     return false
 end
 
@@ -151,6 +176,15 @@ local function getIgnoreList()
     local l = { Camera }
     if LocalPlayer.Character then table.insert(l, LocalPlayer.Character) end
     return l
+end
+
+-- Deteksi target pegang tool/weapon?
+local function hasWeapon(player)
+    if not player or not player.Character then return false end
+    for _, child in ipairs(player.Character:GetChildren()) do
+        if child:IsA("Tool") then return true end
+    end
+    return false
 end
 
 local function findTarget(camPos, lookVec, ignore)
@@ -167,7 +201,14 @@ local function findTarget(camPos, lookVec, ignore)
                 if CFG.debugMode then print("[AIM] SKIP", p.Name, "→ dead") end
                 continue
             end
-            local part = CFG.headOnly and getHead(p.Character) or getTorso(p.Character)
+
+            local part, aimAtt
+            if CFG.headOnly then
+                part, aimAtt = getHead(p.Character)
+            else
+                part = getTorso(p.Character)
+            end
+
             if not part then
                 if CFG.debugMode then print("[AIM] SKIP", p.Name, "→ no part") end
                 continue
@@ -190,7 +231,7 @@ local function findTarget(camPos, lookVec, ignore)
                 if CFG.debugMode then print("[AIM] SKIP", p.Name, "→ wall") end
                 continue
             end
-            closest = { player = p, part = part }
+            closest = { player = p, part = part, attachment = aimAtt, hasWeapon = hasWeapon(p) }
             cDist = d
         end
     end
@@ -215,7 +256,6 @@ local function applyESP(p)
     local teammate = isTeammate(p)
     if teammate and not CFG.showTeammatesESP then return end
 
-    -- Warna: teammate = warna tim, enemy = hijau default
     local baseColor = teammate and getTeamColor(p.Team) or CFG.fillColor
 
     local hl = Instance.new("Highlight")
@@ -251,7 +291,6 @@ Players.PlayerAdded:Connect(function(p)
         task.wait(0.8)
         if CFG.espEnabled then applyESP(p) end
     end)
-    -- Deteksi kalau team berubah
     p:GetPropertyChangedSignal("Team"):Connect(function()
         if CFG.espEnabled then removeESP(p); applyESP(p) end
     end)
@@ -269,7 +308,6 @@ for _, p in ipairs(Players:GetPlayers()) do
     end)
 end
 
--- Update warna: teammate = warna tim fixed, enemy = health-based
 RunService.Heartbeat:Connect(function()
     if not CFG.espEnabled or not CFG.healthBasedColor then return end
     for p, hl in pairs(highlights) do
@@ -347,7 +385,7 @@ local targetLbl = Instance.new("TextLabel")
 targetLbl.Name = "TargetLbl"
 targetLbl.AnchorPoint = Vector2.new(0.5, 0)
 targetLbl.Position = UDim2.new(0.5, 0, 0.5, 30)
-targetLbl.Size = UDim2.new(0, 250, 0, 18)
+targetLbl.Size = UDim2.new(0, 280, 0, 18)
 targetLbl.BackgroundTransparency = 1
 targetLbl.Text = ""
 targetLbl.TextColor3 = Color3.fromRGB(255, 80, 80)
@@ -357,7 +395,7 @@ targetLbl.ZIndex = 3
 targetLbl.Visible = false
 targetLbl.Parent = FOVGui
 -- ============================================================
--- MAIN LOOP v4.5 — TEAM-AWARE
+-- MAIN LOOP v4.6 — WEAPON-AWARE
 -- ============================================================
 local cameraLocked = false
 local lastTarget   = nil
@@ -433,23 +471,45 @@ RunService.RenderStepped:Connect(function()
         if CFG.showFOV then fovStroke.Transparency = 0 end
         crosshair.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
 
-        -- Label: tandai kalau target teammate (harusnya nggak kejadian kalau ignoreTeammates ON)
         local tag = isTeammate(target.player) and " [TEAM]" or ""
-        targetLbl.Text = "🎯 " .. target.player.Name .. tag
+        local wTag = target.hasWeapon and " 🔫" or ""
+        targetLbl.Text = "🎯 " .. target.player.Name .. tag .. wTag
         targetLbl.Visible = true
 
-        local targetPos = target.part.Position
+        -- ================================
+        -- POSISI TARGET (attachment dulu, fallback part)
+        -- ================================
+        local targetPos
+        if target.attachment then
+            targetPos = target.attachment.WorldPosition
+        else
+            targetPos = target.part.Position
+        end
+
+        -- Prediction (horizontal only)
         local targetVel = target.part.AssemblyLinearVelocity or Vector3.zero
         local horizontalVel = Vector3.new(targetVel.X, 0, targetVel.Z)
         local predictedPos = targetPos + horizontalVel * AIM_TUNE.prediction
-        predictedPos = predictedPos + AIM_TUNE.headOffset
 
+        -- ================================
+        -- WEAPON OFFSET — kalau target pegang senjata
+        -- ================================
+        local offset = AIM_TUNE.headOffset
+        if target.hasWeapon then
+            offset = offset + AIM_TUNE.weaponOffset
+        end
+        predictedPos = predictedPos + offset
+
+        -- ================================
+        -- SUDUT KE TARGET
+        -- ================================
         local toTarget = predictedPos - camPos
         local distToTarget = toTarget.Magnitude
         local angleToTarget = math.deg(math.acos(
             math.clamp(Camera.CFrame.LookVector.Unit:Dot(toTarget.Unit), -1, 1)
         ))
 
+        -- Snap / Lerp
         local isSnap = false
         if angleToTarget <= AIM_TUNE.snapAngleDeg then
             isSnap = true
@@ -467,6 +527,7 @@ RunService.RenderStepped:Connect(function()
             Camera.CFrame = Camera.CFrame:Lerp(lookCF, lerpFactor)
         end
 
+        -- Body rotation sync
         if AIM_TUNE.rotateBody then
             local char = LocalPlayer.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -512,7 +573,7 @@ SG.DisplayOrder = 10000
 SG.Parent = parentGui
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 320, 0, 760)
+Main.Size = UDim2.new(0, 320, 0, 800)
 Main.Position = UDim2.new(0, 20, 0, 40)
 Main.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
 Main.BorderSizePixel = 0
@@ -535,7 +596,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -50, 1, 0)
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "🔥 INDONESIA HUB v4.5"
+Title.Text = "🔥 INDONESIA HUB v4.6"
 Title.TextColor3 = Color3.fromRGB(0, 200, 255)
 Title.Font = Enum.Font.GothamBlack
 Title.TextSize = 13
@@ -556,7 +617,7 @@ Instance.new("UICorner", HideBtn).CornerRadius = UDim.new(0, 6)
 local Minimized = false
 HideBtn.MouseButton1Click:Connect(function()
     Minimized = not Minimized
-    Main.Size = Minimized and UDim2.new(0, 320, 0, 40) or UDim2.new(0, 320, 0, 760)
+    Main.Size = Minimized and UDim2.new(0, 320, 0, 40) or UDim2.new(0, 320, 0, 800)
     HideBtn.Text = Minimized and "＋" or "—"
 end)
 
@@ -680,7 +741,7 @@ local function slider(text, minVal, maxVal, curVal, step, callback)
     end)
 end
 
--- ============ TEAM INDICATOR (live update) ============
+-- ============ TEAM INDICATOR (live) ============
 sectionLabel("👥 TEAM STATUS")
 local teamStatus = Instance.new("TextLabel")
 teamStatus.Size = UDim2.new(1, -4, 0, 38)
@@ -721,6 +782,9 @@ end)
 slider("Prediction", 1, 40, math.floor(AIM_TUNE.prediction * 100), 1, function(v)
     AIM_TUNE.prediction = v / 100
 end)
+slider("Weapon Offset Y (0-100 = 0-1 stud)", 0, 100, math.floor(AIM_TUNE.weaponOffset.Y * 100), 1, function(v)
+    AIM_TUNE.weaponOffset = Vector3.new(AIM_TUNE.weaponOffset.X, v / 100, AIM_TUNE.weaponOffset.Z)
+end)
 
 sectionLabel("👥 TEAM CHECK")
 toggleBtn("Ignore Teammates (Aim)", CFG.ignoreTeammates, function(on)
@@ -746,7 +810,7 @@ sectionLabel("ℹ️ INFO")
 local info = Instance.new("TextLabel")
 info.Size = UDim2.new(1, -4, 0, 70)
 info.BackgroundTransparency = 1
-info.Text = "Dev: LIKA ♀ | v4.5 TEAM\nESP teammate = warna tim\nESP enemy = health color\nUI toggle: RightShift"
+info.Text = "Dev: LIKA ♀ | v4.6 WEAPON FIX\n🔫 = target pegang weapon\n🔴 = locked | 🟢 = idle\nUI toggle: RightShift"
 info.TextColor3 = Color3.fromRGB(140, 140, 160)
 info.Font = Enum.Font.Gotham
 info.TextSize = 11
@@ -788,4 +852,4 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("[INDONESIA HUB v4.5] Loaded ✅ | ARSENAL TEAM-AWARE | 4-part")
+print("[INDONESIA HUB v4.6] Loaded ✅ | WEAPON FIX | 4-part")
