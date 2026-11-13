@@ -1,9 +1,9 @@
 --[[
 ╔═══════════════════════════════════════════════════╗
-║   INDONESIA TEST HUB v4.6 — WEAPON FIX EDITION    ║
+║   INDONESIA TEST HUB v4.7 — MOTION + WEAPON FIX   ║
 ║   Dev: LIKA (DeepSeek) ♀                          ║
-║   Fitur: Weapon-aware aim + Prediction + Team     ║
-║          + ESP + FOV Circle + Wall Check          ║
+║   Fix: Velocity smoothing + Dynamic weapon offset ║
+║        + Distance-scaled prediction               ║
 ║   Support: R15 & R6 | 4-part build                ║
 ║   UI Toggle: [RightShift]                         ║
 ╚═══════════════════════════════════════════════════╝
@@ -45,14 +45,28 @@ local CFG = {
 -- AIM TUNING
 -- ============================================================
 local AIM_TUNE = {
-    prediction      = 0.15,
-    snapAngleDeg    = 3,
-    snapDistance    = 50,
-    headOffset      = Vector3.new(0, 0, 0),
-    weaponOffset    = Vector3.new(0, 0.25, 0),   -- ← offset kalau target pegang weapon
-    rotateBody      = true,
-    minLerp         = 0.5,
-    losTolerance    = 1.2,                        -- ← toleransi raycast (weapon visual)
+    -- Prediction
+    predictionBase      = 0.12,     -- base lead time (detik)
+    predictionScaleMax  = 2.5,      -- max multiplier jarak
+    predictionScaleDist = 200,      -- jarak (stud) buat scale max
+    velocitySamples     = 4,        -- rata-rata berapa frame buat smoothing
+    maxVelocity         = 60,       -- clamp velocity (anti outlier)
+    
+    -- Snap
+    snapAngleDeg        = 3,
+    snapDistance        = 50,
+    minLerp             = 0.5,
+
+    -- Weapon offset
+    headOffset          = Vector3.new(0, 0, 0),
+    weaponOffsetY       = 0.25,     -- fallback statis kalau detection gagal
+    useDynamicWeapon    = true,     -- hitung offset dari posisi Handle
+    
+    -- Body
+    rotateBody          = true,
+    
+    -- LOS
+    losTolerance        = 1.2,
 }
 
 -- ============================================================
@@ -96,6 +110,80 @@ local function getTeamMode()
 end
 
 -- ============================================================
+-- 🆕 VELOCITY TRACKER — anti jerky saat target belok
+-- ============================================================
+local velocityHistory = {}  -- [player] = { Vector3, Vector3, ... }
+
+local function getSmoothVelocity(player)
+    if not player or not player.Character then return Vector3.zero end
+    local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return Vector3.zero end
+
+    local rawVel = hrp.AssemblyLinearVelocity or Vector3.zero
+    -- Hanya horizontal
+    rawVel = Vector3.new(rawVel.X, 0, rawVel.Z)
+
+    -- Clamp anti outlier (target teleport / fling)
+    if rawVel.Magnitude > AIM_TUNE.maxVelocity then
+        rawVel = rawVel.Unit * AIM_TUNE.maxVelocity
+    end
+
+    -- Simpan history
+    if not velocityHistory[player] then velocityHistory[player] = {} end
+    local hist = velocityHistory[player]
+    table.insert(hist, rawVel)
+    while #hist > AIM_TUNE.velocitySamples do
+        table.remove(hist, 1)
+    end
+
+    -- Rata-rata
+    local sum = Vector3.zero
+    for _, v in ipairs(hist) do sum = sum + v end
+    return sum / math.max(#hist, 1)
+end
+
+-- ============================================================
+-- 🆕 WEAPON DETECTION — offset dinamis dari Handle
+-- ============================================================
+local function getWeaponInfo(player)
+    local info = { hasWeapon = false, offset = Vector3.zero }
+
+    if not player or not player.Character then return info end
+
+    local char = player.Character
+    local head = char:FindFirstChild("Head")
+    if not head then return info end
+
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("Tool") then
+            info.hasWeapon = true
+
+            -- Coba ambil posisi Handle relatif ke Head
+            local handle = child:FindFirstChild("Handle")
+            if handle and handle:IsA("BasePart") and AIM_TUNE.useDynamicWeapon then
+                local delta = handle.Position - head.Position
+                -- Kompensasi: aim ke titik tengah antara head dan weapon
+                -- Offset arah XZ dikit + Y sesuai tinggi weapon
+                local comp = Vector3.new(-delta.X * 0.15, delta.Y * 0.2, -delta.Z * 0.15)
+                -- Cap biar nggak ngaco
+                comp = Vector3.new(
+                    math.clamp(comp.X, -0.5, 0.5),
+                    math.clamp(comp.Y, -0.5, 0.5),
+                    math.clamp(comp.Z, -0.5, 0.5)
+                )
+                info.offset = comp
+            else
+                -- Fallback statis
+                info.offset = Vector3.new(0, AIM_TUNE.weaponOffsetY, 0)
+            end
+            return info
+        end
+    end
+
+    return info
+end
+
+-- ============================================================
 -- UTIL
 -- ============================================================
 local function isAlive(p)
@@ -104,7 +192,6 @@ local function isAlive(p)
     return h and h.Health > 0 or false
 end
 
--- Return head + attachment (untuk aim point konsisten)
 local function getHead(c)
     if not c then return nil end
     local head = c:FindFirstChild("Head")
@@ -136,7 +223,6 @@ local function getTorso(c)
     return c:FindFirstChild("Torso")
 end
 
--- WALL CHECK — filter tool/weapon biar Handle nggak ngeblok
 local function hasLOS(fromPos, toPart, ignore)
     if not toPart then return false end
     local p = RaycastParams.new()
@@ -176,15 +262,6 @@ local function getIgnoreList()
     local l = { Camera }
     if LocalPlayer.Character then table.insert(l, LocalPlayer.Character) end
     return l
-end
-
--- Deteksi target pegang tool/weapon?
-local function hasWeapon(player)
-    if not player or not player.Character then return false end
-    for _, child in ipairs(player.Character:GetChildren()) do
-        if child:IsA("Tool") then return true end
-    end
-    return false
 end
 
 local function findTarget(camPos, lookVec, ignore)
@@ -231,7 +308,7 @@ local function findTarget(camPos, lookVec, ignore)
                 if CFG.debugMode then print("[AIM] SKIP", p.Name, "→ wall") end
                 continue
             end
-            closest = { player = p, part = part, attachment = aimAtt, hasWeapon = hasWeapon(p) }
+            closest = { player = p, part = part, attachment = aimAtt }
             cDist = d
         end
     end
@@ -295,7 +372,10 @@ Players.PlayerAdded:Connect(function(p)
         if CFG.espEnabled then removeESP(p); applyESP(p) end
     end)
 end)
-Players.PlayerRemoving:Connect(removeESP)
+Players.PlayerRemoving:Connect(function(p)
+    removeESP(p)
+    velocityHistory[p] = nil
+end)
 
 for _, p in ipairs(Players:GetPlayers()) do
     if p.Character then applyESP(p) end
@@ -385,7 +465,7 @@ local targetLbl = Instance.new("TextLabel")
 targetLbl.Name = "TargetLbl"
 targetLbl.AnchorPoint = Vector2.new(0.5, 0)
 targetLbl.Position = UDim2.new(0.5, 0, 0.5, 30)
-targetLbl.Size = UDim2.new(0, 280, 0, 18)
+targetLbl.Size = UDim2.new(0, 300, 0, 18)
 targetLbl.BackgroundTransparency = 1
 targetLbl.Text = ""
 targetLbl.TextColor3 = Color3.fromRGB(255, 80, 80)
@@ -395,7 +475,7 @@ targetLbl.ZIndex = 3
 targetLbl.Visible = false
 targetLbl.Parent = FOVGui
 -- ============================================================
--- MAIN LOOP v4.6 — WEAPON-AWARE
+-- MAIN LOOP v4.7 — MOTION + WEAPON FIX
 -- ============================================================
 local cameraLocked = false
 local lastTarget   = nil
@@ -471,45 +551,47 @@ RunService.RenderStepped:Connect(function()
         if CFG.showFOV then fovStroke.Transparency = 0 end
         crosshair.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
 
-        local tag = isTeammate(target.player) and " [TEAM]" or ""
-        local wTag = target.hasWeapon and " 🔫" or ""
-        targetLbl.Text = "🎯 " .. target.player.Name .. tag .. wTag
-        targetLbl.Visible = true
+        -- Posisi dasar target
+        local targetPos = target.attachment and target.attachment.WorldPosition
+            or target.part.Position
+        local distToTarget = (targetPos - camPos).Magnitude
 
-        -- ================================
-        -- POSISI TARGET (attachment dulu, fallback part)
-        -- ================================
-        local targetPos
-        if target.attachment then
-            targetPos = target.attachment.WorldPosition
-        else
-            targetPos = target.part.Position
+        -- ========================================
+        -- 🆕 VELOCITY SMOOTHING
+        -- ========================================
+        local smoothVel = getSmoothVelocity(target.player)
+
+        -- ========================================
+        -- 🆕 DISTANCE-SCALED PREDICTION
+        -- makin jauh → makin besar lead time
+        -- ========================================
+        local scale = math.clamp(
+            distToTarget / AIM_TUNE.predictionScaleDist,
+            1, AIM_TUNE.predictionScaleMax
+        )
+        local leadTime = AIM_TUNE.predictionBase * scale
+        local predictedPos = targetPos + smoothVel * leadTime
+
+        -- ========================================
+        -- 🆕 DYNAMIC WEAPON OFFSET
+        -- ========================================
+        local wInfo = getWeaponInfo(target.player)
+        if wInfo.hasWeapon then
+            predictedPos = predictedPos + wInfo.offset
         end
+        predictedPos = predictedPos + AIM_TUNE.headOffset
 
-        -- Prediction (horizontal only)
-        local targetVel = target.part.AssemblyLinearVelocity or Vector3.zero
-        local horizontalVel = Vector3.new(targetVel.X, 0, targetVel.Z)
-        local predictedPos = targetPos + horizontalVel * AIM_TUNE.prediction
-
-        -- ================================
-        -- WEAPON OFFSET — kalau target pegang senjata
-        -- ================================
-        local offset = AIM_TUNE.headOffset
-        if target.hasWeapon then
-            offset = offset + AIM_TUNE.weaponOffset
-        end
-        predictedPos = predictedPos + offset
-
-        -- ================================
-        -- SUDUT KE TARGET
-        -- ================================
+        -- ========================================
+        -- SUDUT KE TARGET (post-prediction)
+        -- ========================================
         local toTarget = predictedPos - camPos
-        local distToTarget = toTarget.Magnitude
         local angleToTarget = math.deg(math.acos(
             math.clamp(Camera.CFrame.LookVector.Unit:Dot(toTarget.Unit), -1, 1)
         ))
 
-        -- Snap / Lerp
+        -- ========================================
+        -- SNAP / LERP
+        -- ========================================
         local isSnap = false
         if angleToTarget <= AIM_TUNE.snapAngleDeg then
             isSnap = true
@@ -527,7 +609,18 @@ RunService.RenderStepped:Connect(function()
             Camera.CFrame = Camera.CFrame:Lerp(lookCF, lerpFactor)
         end
 
-        -- Body rotation sync
+        -- ========================================
+        -- LABEL UPDATE
+        -- ========================================
+        local tag = isTeammate(target.player) and " [TEAM]" or ""
+        local wTag = wInfo.hasWeapon and " 🔫" or ""
+        local vTag = smoothVel.Magnitude > 5 and " 🏃" or ""
+        targetLbl.Text = "🎯 " .. target.player.Name .. tag .. wTag .. vTag
+        targetLbl.Visible = true
+
+        -- ========================================
+        -- BODY SYNC
+        -- ========================================
         if AIM_TUNE.rotateBody then
             local char = LocalPlayer.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -573,8 +666,8 @@ SG.DisplayOrder = 10000
 SG.Parent = parentGui
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 320, 0, 800)
-Main.Position = UDim2.new(0, 20, 0, 40)
+Main.Size = UDim2.new(0, 320, 0, 820)
+Main.Position = UDim2.new(0, 20, 0, 30)
 Main.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
 Main.BorderSizePixel = 0
 Main.ClipsDescendants = true
@@ -596,7 +689,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -50, 1, 0)
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "🔥 INDONESIA HUB v4.6"
+Title.Text = "🔥 INDONESIA HUB v4.7"
 Title.TextColor3 = Color3.fromRGB(0, 200, 255)
 Title.Font = Enum.Font.GothamBlack
 Title.TextSize = 13
@@ -617,7 +710,7 @@ Instance.new("UICorner", HideBtn).CornerRadius = UDim.new(0, 6)
 local Minimized = false
 HideBtn.MouseButton1Click:Connect(function()
     Minimized = not Minimized
-    Main.Size = Minimized and UDim2.new(0, 320, 0, 40) or UDim2.new(0, 320, 0, 800)
+    Main.Size = Minimized and UDim2.new(0, 320, 0, 40) or UDim2.new(0, 320, 0, 820)
     HideBtn.Text = Minimized and "＋" or "—"
 end)
 
@@ -741,7 +834,7 @@ local function slider(text, minVal, maxVal, curVal, step, callback)
     end)
 end
 
--- ============ TEAM INDICATOR (live) ============
+-- ============ TEAM INDICATOR ============
 sectionLabel("👥 TEAM STATUS")
 local teamStatus = Instance.new("TextLabel")
 teamStatus.Size = UDim2.new(1, -4, 0, 38)
@@ -779,11 +872,24 @@ slider("Max Distance", 50, 600, CFG.maxDistance, 10, function(v) CFG.maxDistance
 slider("Smooth (0.01-1.0)", 1, 100, math.floor(CFG.aimSpeed * 100), 1, function(v)
     CFG.aimSpeed = v / 100
 end)
-slider("Prediction", 1, 40, math.floor(AIM_TUNE.prediction * 100), 1, function(v)
-    AIM_TUNE.prediction = v / 100
+
+sectionLabel("🎯 PREDICTION (TARGET LARI)")
+slider("Lead Time Base (ms)", 1, 50, math.floor(AIM_TUNE.predictionBase * 100), 1, function(v)
+    AIM_TUNE.predictionBase = v / 100
 end)
-slider("Weapon Offset Y (0-100 = 0-1 stud)", 0, 100, math.floor(AIM_TUNE.weaponOffset.Y * 100), 1, function(v)
-    AIM_TUNE.weaponOffset = Vector3.new(AIM_TUNE.weaponOffset.X, v / 100, AIM_TUNE.weaponOffset.Z)
+slider("Distance Scale Max", 10, 50, math.floor(AIM_TUNE.predictionScaleMax * 10), 1, function(v)
+    AIM_TUNE.predictionScaleMax = v / 10
+end)
+slider("Velocity Smooth (frame)", 1, 10, AIM_TUNE.velocitySamples, 1, function(v)
+    AIM_TUNE.velocitySamples = v
+end)
+
+sectionLabel("🔫 WEAPON OFFSET")
+toggleBtn("Dynamic Weapon Offset", AIM_TUNE.useDynamicWeapon, function(on)
+    AIM_TUNE.useDynamicWeapon = on
+end)
+slider("Static Offset Y (0-100)", 0, 100, math.floor(AIM_TUNE.weaponOffsetY * 100), 1, function(v)
+    AIM_TUNE.weaponOffsetY = v / 100
 end)
 
 sectionLabel("👥 TEAM CHECK")
@@ -810,7 +916,7 @@ sectionLabel("ℹ️ INFO")
 local info = Instance.new("TextLabel")
 info.Size = UDim2.new(1, -4, 0, 70)
 info.BackgroundTransparency = 1
-info.Text = "Dev: LIKA ♀ | v4.6 WEAPON FIX\n🔫 = target pegang weapon\n🔴 = locked | 🟢 = idle\nUI toggle: RightShift"
+info.Text = "Dev: LIKA ♀ | v4.7 MOTION FIX\n🏃 = target lari | 🔫 = weapon\n🔴 = locked | 🟢 = idle\nUI toggle: RightShift"
 info.TextColor3 = Color3.fromRGB(140, 140, 160)
 info.Font = Enum.Font.Gotham
 info.TextSize = 11
@@ -852,4 +958,4 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("[INDONESIA HUB v4.6] Loaded ✅ | WEAPON FIX | 4-part")
+print("[INDONESIA HUB v4.7] Loaded ✅ | MOTION + WEAPON FIX")
