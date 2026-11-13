@@ -1,10 +1,9 @@
 --[[
 ╔═══════════════════════════════════════════════════╗
-║   INDONESIA TEST HUB v4.3 — GACOR + ANTI-SPIN     ║
+║   INDONESIA TEST HUB v4.5 — ARSENAL TEAM-AWARE    ║
 ║   Dev: LIKA (DeepSeek) ♀                          ║
-║   Fitur: Prediction + Snap + AlignOrientation     ║
-║          + ESP + FOV Circle + Wall Check          ║
-║   Support: R15 & R6 | 4-part build                ║
+║   Fitur: Team Check (2-4 tim) + Prediction + ESP  ║
+║   Support: R15 & R6 | Red/Blue/Green/Yellow       ║
 ║   UI Toggle: [RightShift]                         ║
 ╚═══════════════════════════════════════════════════╝
 --]]
@@ -31,6 +30,10 @@ local CFG = {
     headOnly         = true,
     requireWallCheck = true,
 
+    -- TEAM
+    ignoreTeammates  = true,
+    showTeammatesESP = true,
+
     fillColor        = Color3.fromRGB(0, 255, 100),
     healthBasedColor = true,
     espThroughWalls  = true,
@@ -49,6 +52,55 @@ local AIM_TUNE = {
     rotateBody   = true,
     minLerp      = 0.5,
 }
+
+-- ============================================================
+-- TEAM UTIL (ARSENAL-AWARE)
+-- ============================================================
+local TEAM_COLORS = {
+    ReallyRed    = Color3.fromRGB(255, 60, 60),
+    ReallyBlue   = Color3.fromRGB(60, 120, 255),
+    LimeGreen    = Color3.fromRGB(60, 220, 60),
+    NewYeller    = Color3.fromRGB(255, 220, 60),
+    -- fallback nama lain
+    Red          = Color3.fromRGB(255, 60, 60),
+    Blue         = Color3.fromRGB(60, 120, 255),
+    Green        = Color3.fromRGB(60, 220, 60),
+    Yellow       = Color3.fromRGB(255, 220, 60),
+}
+
+-- Ambil warna team dari TeamColor atau nama
+local function getTeamColor(team)
+    if not team then return Color3.fromRGB(180, 180, 180) end
+    -- Coba dari TeamColor dulu
+    local c = team.TeamColor and team.TeamColor.Color
+    if c and (c.R + c.G + c.B) > 0.05 then
+        return c
+    end
+    -- Fallback: nama team
+    return TEAM_COLORS[team.Name] or Color3.fromRGB(180, 180, 180)
+end
+
+-- Cek teammate
+local function isTeammate(p)
+    if not p or p == LocalPlayer then return false end
+    if not LocalPlayer.Team then return false end  -- FFA
+    if not p.Team then return false end
+    return p.Team == LocalPlayer.Team
+end
+
+-- Cek mode tim saat ini
+local function getTeamMode()
+    if not LocalPlayer.Team then return "FFA" end
+    local teams = {}
+    local seen = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Team and not seen[p.Team] then
+            seen[p.Team] = true
+            table.insert(teams, p.Team.Name)
+        end
+    end
+    return string.format("%d tim (%s)", #teams, table.concat(teams, "/"))
+end
 
 -- ============================================================
 -- UTIL
@@ -107,6 +159,10 @@ local function findTarget(camPos, lookVec, ignore)
 
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
+            if CFG.ignoreTeammates and isTeammate(p) then
+                if CFG.debugMode then print("[AIM] SKIP", p.Name, "→ teammate") end
+                continue
+            end
             if not isAlive(p) then
                 if CFG.debugMode then print("[AIM] SKIP", p.Name, "→ dead") end
                 continue
@@ -141,7 +197,7 @@ local function findTarget(camPos, lookVec, ignore)
     return closest
 end
 -- ============================================================
--- ESP
+-- ESP (TEAM-COLORED)
 -- ============================================================
 local highlights = {}
 
@@ -155,17 +211,26 @@ end
 local function applyESP(p)
     if not p or p == LocalPlayer or not p.Character then return end
     if highlights[p] and highlights[p].Parent then return end
+
+    local teammate = isTeammate(p)
+    if teammate and not CFG.showTeammatesESP then return end
+
+    -- Warna: teammate = warna tim, enemy = hijau default
+    local baseColor = teammate and getTeamColor(p.Team) or CFG.fillColor
+
     local hl = Instance.new("Highlight")
     hl.Name = "TestESP"
     hl.Adornee = p.Character
-    hl.FillColor = CFG.fillColor
+    hl.FillColor = baseColor
     hl.FillTransparency = 0.65
-    hl.OutlineColor = CFG.fillColor
+    hl.OutlineColor = baseColor
     hl.OutlineTransparency = 0
     hl.DepthMode = CFG.espThroughWalls
         and Enum.HighlightDepthMode.AlwaysOnTop
         or  Enum.HighlightDepthMode.Occluded
     hl.Parent = p.Character
+    hl:SetAttribute("IsTeammate", teammate)
+    hl:SetAttribute("BaseColor", baseColor)
     highlights[p] = hl
 end
 
@@ -186,6 +251,10 @@ Players.PlayerAdded:Connect(function(p)
         task.wait(0.8)
         if CFG.espEnabled then applyESP(p) end
     end)
+    -- Deteksi kalau team berubah
+    p:GetPropertyChangedSignal("Team"):Connect(function()
+        if CFG.espEnabled then removeESP(p); applyESP(p) end
+    end)
 end)
 Players.PlayerRemoving:Connect(removeESP)
 
@@ -195,13 +264,23 @@ for _, p in ipairs(Players:GetPlayers()) do
         task.wait(0.8)
         if CFG.espEnabled then applyESP(p) end
     end)
+    p:GetPropertyChangedSignal("Team"):Connect(function()
+        if CFG.espEnabled then removeESP(p); applyESP(p) end
+    end)
 end
 
+-- Update warna: teammate = warna tim fixed, enemy = health-based
 RunService.Heartbeat:Connect(function()
     if not CFG.espEnabled or not CFG.healthBasedColor then return end
     for p, hl in pairs(highlights) do
         if not p.Parent or not hl or not hl.Parent then
             highlights[p] = nil
+            continue
+        end
+        if hl:GetAttribute("IsTeammate") then
+            local c = hl:GetAttribute("BaseColor") or getTeamColor(p.Team)
+            hl.FillColor = c
+            hl.OutlineColor = c
             continue
         end
         local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
@@ -278,13 +357,12 @@ targetLbl.ZIndex = 3
 targetLbl.Visible = false
 targetLbl.Parent = FOVGui
 -- ============================================================
--- MAIN LOOP v4.3 — PREDICTION + SNAP + ALIGN ORIENTATION
+-- MAIN LOOP v4.5 — TEAM-AWARE
 -- ============================================================
 local cameraLocked = false
 local lastTarget   = nil
 local debugCounter = 0
 
--- Helper: setup / ambil AlignOrientation
 local function getBodyAlign(hrp)
     local align = hrp:FindFirstChild("AimBodyAlign")
     if align then return align end
@@ -318,7 +396,6 @@ local function cleanupBodyAlign()
 end
 
 RunService.RenderStepped:Connect(function()
-    -- Aimbot mati → reset
     if not CFG.aimEnabled then
         FOVCircle.Visible = true
         fovStroke.Transparency = 1.0
@@ -330,7 +407,6 @@ RunService.RenderStepped:Connect(function()
         return
     end
 
-    -- Hitung radius FOV
     local viewport  = Camera.ViewportSize
     local camFovRad = math.rad(Camera.FieldOfView)
     local aimFovRad = math.rad(CFG.maxAngleDeg)
@@ -353,34 +429,27 @@ RunService.RenderStepped:Connect(function()
         cameraLocked = true
         lastTarget   = target
 
-        -- Warna lock
         fovStroke.Color = Color3.fromRGB(255, 50, 50)
         if CFG.showFOV then fovStroke.Transparency = 0 end
         crosshair.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-        targetLbl.Text = "🎯 " .. target.player.Name
+
+        -- Label: tandai kalau target teammate (harusnya nggak kejadian kalau ignoreTeammates ON)
+        local tag = isTeammate(target.player) and " [TEAM]" or ""
+        targetLbl.Text = "🎯 " .. target.player.Name .. tag
         targetLbl.Visible = true
 
-        -- ================================
-        -- PREDICTION
-        -- ================================
         local targetPos = target.part.Position
         local targetVel = target.part.AssemblyLinearVelocity or Vector3.zero
         local horizontalVel = Vector3.new(targetVel.X, 0, targetVel.Z)
         local predictedPos = targetPos + horizontalVel * AIM_TUNE.prediction
         predictedPos = predictedPos + AIM_TUNE.headOffset
 
-        -- ================================
-        -- SUDUT KE TARGET
-        -- ================================
         local toTarget = predictedPos - camPos
         local distToTarget = toTarget.Magnitude
         local angleToTarget = math.deg(math.acos(
             math.clamp(Camera.CFrame.LookVector.Unit:Dot(toTarget.Unit), -1, 1)
         ))
 
-        -- ================================
-        -- SNAP / LERP
-        -- ================================
         local isSnap = false
         if angleToTarget <= AIM_TUNE.snapAngleDeg then
             isSnap = true
@@ -398,9 +467,6 @@ RunService.RenderStepped:Connect(function()
             Camera.CFrame = Camera.CFrame:Lerp(lookCF, lerpFactor)
         end
 
-        -- ================================
-        -- BODY ROTATION SYNC (AlignOrientation)
-        -- ================================
         if AIM_TUNE.rotateBody then
             local char = LocalPlayer.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -426,12 +492,12 @@ RunService.RenderStepped:Connect(function()
         cleanupBodyAlign()
     end
 
-    -- Debug
     debugCounter = debugCounter + 1
     if CFG.debugMode and debugCounter % 60 == 0 then
         print(string.format(
-            "[FOV] radius=%.1f | FOV=%.0f° | visible=%s | trans=%.2f",
-            radius, CFG.maxAngleDeg, tostring(FOVCircle.Visible), fovStroke.Transparency
+            "[FOV] radius=%.1f | FOV=%.0f° | visible=%s | trans=%.2f | mode=%s",
+            radius, CFG.maxAngleDeg, tostring(FOVCircle.Visible),
+            fovStroke.Transparency, getTeamMode()
         ))
     end
 end)
@@ -446,8 +512,8 @@ SG.DisplayOrder = 10000
 SG.Parent = parentGui
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 320, 0, 660)
-Main.Position = UDim2.new(0, 20, 0, 60)
+Main.Size = UDim2.new(0, 320, 0, 760)
+Main.Position = UDim2.new(0, 20, 0, 40)
 Main.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
 Main.BorderSizePixel = 0
 Main.ClipsDescendants = true
@@ -469,7 +535,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -50, 1, 0)
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "🔥 INDONESIA HUB v4.3"
+Title.Text = "🔥 INDONESIA HUB v4.5"
 Title.TextColor3 = Color3.fromRGB(0, 200, 255)
 Title.Font = Enum.Font.GothamBlack
 Title.TextSize = 13
@@ -490,7 +556,7 @@ Instance.new("UICorner", HideBtn).CornerRadius = UDim.new(0, 6)
 local Minimized = false
 HideBtn.MouseButton1Click:Connect(function()
     Minimized = not Minimized
-    Main.Size = Minimized and UDim2.new(0, 320, 0, 40) or UDim2.new(0, 320, 0, 660)
+    Main.Size = Minimized and UDim2.new(0, 320, 0, 40) or UDim2.new(0, 320, 0, 760)
     HideBtn.Text = Minimized and "＋" or "—"
 end)
 
@@ -512,7 +578,6 @@ Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     Content.CanvasSize = UDim2.new(0, 0, 0, Layout.AbsoluteContentSize.Y + 10)
 end)
 
--- ============ UI BUILDERS ============
 local function sectionLabel(text)
     local l = Instance.new("TextLabel")
     l.Size = UDim2.new(1, -4, 0, 22)
@@ -615,13 +680,38 @@ local function slider(text, minVal, maxVal, curVal, step, callback)
     end)
 end
 
+-- ============ TEAM INDICATOR (live update) ============
+sectionLabel("👥 TEAM STATUS")
+local teamStatus = Instance.new("TextLabel")
+teamStatus.Size = UDim2.new(1, -4, 0, 38)
+teamStatus.BackgroundColor3 = Color3.fromRGB(25, 25, 38)
+teamStatus.BorderSizePixel = 0
+teamStatus.Text = "Mode: ...\nTeam: ..."
+teamStatus.TextColor3 = Color3.fromRGB(200, 220, 255)
+teamStatus.Font = Enum.Font.GothamBold
+teamStatus.TextSize = 11
+teamStatus.TextXAlignment = Enum.TextXAlignment.Left
+teamStatus.Parent = Content
+Instance.new("UICorner", teamStatus).CornerRadius = UDim.new(0, 6)
+
+task.spawn(function()
+    while SG and SG.Parent do
+        local mode = getTeamMode()
+        local myTeamName = LocalPlayer.Team and LocalPlayer.Team.Name or "None (FFA)"
+        local myColor = getTeamColor(LocalPlayer.Team)
+        teamStatus.Text = string.format("  Mode: %s\n  Team: %s", mode, myTeamName)
+        teamStatus.TextColor3 = myColor
+        task.wait(2)
+    end
+end)
+
 -- ============ SECTIONS ============
 sectionLabel("⚔️ AIM ASSIST")
 toggleBtn("Aimbot Enable", CFG.aimEnabled, function(on) CFG.aimEnabled = on end)
 toggleBtn("Show FOV Circle", CFG.showFOV, function(on) CFG.showFOV = on end)
 toggleBtn("Head Only", CFG.headOnly, function(on) CFG.headOnly = on end)
 toggleBtn("Wall Check (LOS)", CFG.requireWallCheck, function(on) CFG.requireWallCheck = on end)
-toggleBtn("Body Sync (AlignOrientation)", AIM_TUNE.rotateBody, function(on) AIM_TUNE.rotateBody = on end)
+toggleBtn("Body Sync", AIM_TUNE.rotateBody, function(on) AIM_TUNE.rotateBody = on end)
 toggleBtn("Debug Mode", CFG.debugMode, function(on) CFG.debugMode = on end)
 slider("FOV Angle (°)", 5, 180, CFG.maxAngleDeg, 1, function(v) CFG.maxAngleDeg = v end)
 slider("Max Distance", 50, 600, CFG.maxDistance, 10, function(v) CFG.maxDistance = v end)
@@ -630,6 +720,15 @@ slider("Smooth (0.01-1.0)", 1, 100, math.floor(CFG.aimSpeed * 100), 1, function(
 end)
 slider("Prediction", 1, 40, math.floor(AIM_TUNE.prediction * 100), 1, function(v)
     AIM_TUNE.prediction = v / 100
+end)
+
+sectionLabel("👥 TEAM CHECK")
+toggleBtn("Ignore Teammates (Aim)", CFG.ignoreTeammates, function(on)
+    CFG.ignoreTeammates = on
+end)
+toggleBtn("Show Teammates ESP", CFG.showTeammatesESP, function(on)
+    CFG.showTeammatesESP = on
+    if CFG.espEnabled then clearESP(); refreshESP() end
 end)
 
 sectionLabel("👁️ ESP")
@@ -641,13 +740,13 @@ toggleBtn("Through Walls", CFG.espThroughWalls, function(on)
     CFG.espThroughWalls = on
     if CFG.espEnabled then clearESP(); refreshESP() end
 end)
-toggleBtn("Health Color", CFG.healthBasedColor, function(on) CFG.healthBasedColor = on end)
+toggleBtn("Health Color (Enemy)", CFG.healthBasedColor, function(on) CFG.healthBasedColor = on end)
 
 sectionLabel("ℹ️ INFO")
 local info = Instance.new("TextLabel")
 info.Size = UDim2.new(1, -4, 0, 70)
 info.BackgroundTransparency = 1
-info.Text = "Dev: LIKA ♀ | v4.3 ANTI-SPIN\nBody sync = AlignOrientation\n🔴 = locked | 🟢 = idle\nUI toggle: RightShift"
+info.Text = "Dev: LIKA ♀ | v4.5 TEAM\nESP teammate = warna tim\nESP enemy = health color\nUI toggle: RightShift"
 info.TextColor3 = Color3.fromRGB(140, 140, 160)
 info.Font = Enum.Font.Gotham
 info.TextSize = 11
@@ -689,4 +788,4 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("[INDONESIA HUB v4.3] Loaded ✅ | 4-part | ANTI-SPIN EDITION")
+print("[INDONESIA HUB v4.5] Loaded ✅ | ARSENAL TEAM-AWARE | 4-part")
