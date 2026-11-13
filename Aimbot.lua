@@ -1,9 +1,9 @@
 --[[
 ╔═══════════════════════════════════════════════════╗
-║   INDONESIA TEST HUB v4.2 — GACOR EDITION         ║
+║   INDONESIA TEST HUB v4.3 — GACOR + ANTI-SPIN     ║
 ║   Dev: LIKA (DeepSeek) ♀                          ║
-║   Fitur: Prediction + Snap + Body Sync + ESP      ║
-║          + FOV Circle + Wall Check                ║
+║   Fitur: Prediction + Snap + AlignOrientation     ║
+║          + ESP + FOV Circle + Wall Check          ║
 ║   Support: R15 & R6 | 4-part build                ║
 ║   UI Toggle: [RightShift]                         ║
 ╚═══════════════════════════════════════════════════╝
@@ -39,7 +39,7 @@ local CFG = {
 }
 
 -- ============================================================
--- AIM TUNING (GACOR)
+-- AIM TUNING
 -- ============================================================
 local AIM_TUNE = {
     prediction   = 0.15,
@@ -278,11 +278,44 @@ targetLbl.ZIndex = 3
 targetLbl.Visible = false
 targetLbl.Parent = FOVGui
 -- ============================================================
--- MAIN LOOP v4.2 — PREDICTION + SNAP + BODY SYNC
+-- MAIN LOOP v4.3 — PREDICTION + SNAP + ALIGN ORIENTATION
 -- ============================================================
 local cameraLocked = false
 local lastTarget   = nil
 local debugCounter = 0
+
+-- Helper: setup / ambil AlignOrientation
+local function getBodyAlign(hrp)
+    local align = hrp:FindFirstChild("AimBodyAlign")
+    if align then return align end
+
+    local att = hrp:FindFirstChild("RootAttachment")
+    if not att then
+        att = Instance.new("Attachment")
+        att.Name = "AimRootAtt"
+        att.Parent = hrp
+    end
+
+    align = Instance.new("AlignOrientation")
+    align.Name           = "AimBodyAlign"
+    align.Mode           = Enum.OrientationAlignmentMode.OneAttachment
+    align.Attachment0    = att
+    align.MaxTorque      = 20000
+    align.Responsiveness = 60
+    align.RigidityEnabled = false
+    align.Parent         = hrp
+    return align
+end
+
+local function cleanupBodyAlign()
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local align = hrp:FindFirstChild("AimBodyAlign")
+        if align then align:Destroy() end
+    end
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum then hum.AutoRotate = true end
+end
 
 RunService.RenderStepped:Connect(function()
     -- Aimbot mati → reset
@@ -293,8 +326,7 @@ RunService.RenderStepped:Connect(function()
         targetLbl.Visible = false
         cameraLocked = false
         lastTarget = nil
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.AutoRotate = true end
+        cleanupBodyAlign()
         return
     end
 
@@ -367,7 +399,7 @@ RunService.RenderStepped:Connect(function()
         end
 
         -- ================================
-        -- BODY ROTATION SYNC
+        -- BODY ROTATION SYNC (AlignOrientation)
         -- ================================
         if AIM_TUNE.rotateBody then
             local char = LocalPlayer.Character
@@ -375,19 +407,15 @@ RunService.RenderStepped:Connect(function()
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             if hrp and hum then
                 hum.AutoRotate = false
+                local align = getBodyAlign(hrp)
                 local myPos = hrp.Position
-                local dirXZ = Vector3.new(predictedPos.X - myPos.X, 0, predictedPos.Z - myPos.Z)
-                if dirXZ.Magnitude > 0.1 then
-                    local targetYaw = math.atan2(-dirXZ.X, -dirXZ.Z)
-                    local curYaw = math.atan2(-hrp.CFrame.LookVector.X, -hrp.CFrame.LookVector.Z)
-                    local diff = (targetYaw - curYaw + math.pi) % (math.pi * 2) - math.pi
-                    local newYaw = curYaw + diff * 0.4
-                    local currentRotation = hrp.CFrame - hrp.Position
-                    hrp.CFrame = CFrame.new(hrp.Position)
-                        * CFrame.Angles(0, newYaw, 0)
-                        * currentRotation
+                local lookDir = Vector3.new(predictedPos.X - myPos.X, 0, predictedPos.Z - myPos.Z)
+                if lookDir.Magnitude > 0.5 then
+                    align.CFrame = CFrame.lookAt(Vector3.zero, lookDir.Unit)
                 end
             end
+        else
+            cleanupBodyAlign()
         end
     else
         if cameraLocked then cameraLocked = false end
@@ -395,9 +423,7 @@ RunService.RenderStepped:Connect(function()
         if CFG.showFOV then fovStroke.Transparency = 0.4 end
         crosshair.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
         targetLbl.Visible = false
-
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.AutoRotate = true end
+        cleanupBodyAlign()
     end
 
     -- Debug
@@ -420,7 +446,7 @@ SG.DisplayOrder = 10000
 SG.Parent = parentGui
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 320, 0, 620)
+Main.Size = UDim2.new(0, 320, 0, 660)
 Main.Position = UDim2.new(0, 20, 0, 60)
 Main.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
 Main.BorderSizePixel = 0
@@ -443,7 +469,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -50, 1, 0)
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "🔥 INDONESIA HUB v4.2"
+Title.Text = "🔥 INDONESIA HUB v4.3"
 Title.TextColor3 = Color3.fromRGB(0, 200, 255)
 Title.Font = Enum.Font.GothamBlack
 Title.TextSize = 13
@@ -464,7 +490,7 @@ Instance.new("UICorner", HideBtn).CornerRadius = UDim.new(0, 6)
 local Minimized = false
 HideBtn.MouseButton1Click:Connect(function()
     Minimized = not Minimized
-    Main.Size = Minimized and UDim2.new(0, 320, 0, 40) or UDim2.new(0, 320, 0, 620)
+    Main.Size = Minimized and UDim2.new(0, 320, 0, 40) or UDim2.new(0, 320, 0, 660)
     HideBtn.Text = Minimized and "＋" or "—"
 end)
 
@@ -595,7 +621,7 @@ toggleBtn("Aimbot Enable", CFG.aimEnabled, function(on) CFG.aimEnabled = on end)
 toggleBtn("Show FOV Circle", CFG.showFOV, function(on) CFG.showFOV = on end)
 toggleBtn("Head Only", CFG.headOnly, function(on) CFG.headOnly = on end)
 toggleBtn("Wall Check (LOS)", CFG.requireWallCheck, function(on) CFG.requireWallCheck = on end)
-toggleBtn("Body Sync", AIM_TUNE.rotateBody, function(on) AIM_TUNE.rotateBody = on end)
+toggleBtn("Body Sync (AlignOrientation)", AIM_TUNE.rotateBody, function(on) AIM_TUNE.rotateBody = on end)
 toggleBtn("Debug Mode", CFG.debugMode, function(on) CFG.debugMode = on end)
 slider("FOV Angle (°)", 5, 180, CFG.maxAngleDeg, 1, function(v) CFG.maxAngleDeg = v end)
 slider("Max Distance", 50, 600, CFG.maxDistance, 10, function(v) CFG.maxDistance = v end)
@@ -621,7 +647,7 @@ sectionLabel("ℹ️ INFO")
 local info = Instance.new("TextLabel")
 info.Size = UDim2.new(1, -4, 0, 70)
 info.BackgroundTransparency = 1
-info.Text = "Dev: LIKA ♀ | v4.2 GACOR\n4-part build | Prediction + Snap\n🔴 = locked | 🟢 = idle\nUI toggle: RightShift"
+info.Text = "Dev: LIKA ♀ | v4.3 ANTI-SPIN\nBody sync = AlignOrientation\n🔴 = locked | 🟢 = idle\nUI toggle: RightShift"
 info.TextColor3 = Color3.fromRGB(140, 140, 160)
 info.Font = Enum.Font.Gotham
 info.TextSize = 11
@@ -663,4 +689,4 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("[INDONESIA HUB v4.2] Loaded ✅ | 4-part | GACOR EDITION")
+print("[INDONESIA HUB v4.3] Loaded ✅ | 4-part | ANTI-SPIN EDITION")
