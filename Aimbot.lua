@@ -1,9 +1,9 @@
 --[[
 ╔═══════════════════════════════════════════════════╗
-║   INDONESIA TEST HUB v4 — FINAL                   ║
+║   INDONESIA TEST HUB v4.2 — GACOR EDITION         ║
 ║   Dev: LIKA (DeepSeek) ♀                          ║
-║   Fitur: Camera Lock + FOV Circle + WallCheck     ║
-║          + ESP + UI Sliders                       ║
+║   Fitur: Prediction + Snap + Body Sync + ESP      ║
+║          + FOV Circle + Wall Check                ║
 ║   Support: R15 & R6 | 4-part build                ║
 ║   UI Toggle: [RightShift]                         ║
 ╚═══════════════════════════════════════════════════╝
@@ -36,6 +36,18 @@ local CFG = {
     espThroughWalls  = true,
 
     uiKey            = Enum.KeyCode.RightShift,
+}
+
+-- ============================================================
+-- AIM TUNING (GACOR)
+-- ============================================================
+local AIM_TUNE = {
+    prediction   = 0.15,
+    snapAngleDeg = 3,
+    snapDistance = 50,
+    headOffset   = Vector3.new(0, 0, 0),
+    rotateBody   = true,
+    minLerp      = 0.5,
 }
 
 -- ============================================================
@@ -207,7 +219,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
--- FOV CIRCLE GUI (ROBUST)
+-- FOV CIRCLE GUI
 -- ============================================================
 local parentGui = (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui")
 
@@ -266,14 +278,14 @@ targetLbl.ZIndex = 3
 targetLbl.Visible = false
 targetLbl.Parent = FOVGui
 -- ============================================================
--- MAIN LOOP — CAMERA LOCK + WALL CHECK
+-- MAIN LOOP v4.2 — PREDICTION + SNAP + BODY SYNC
 -- ============================================================
 local cameraLocked = false
 local lastTarget   = nil
 local debugCounter = 0
 
 RunService.RenderStepped:Connect(function()
-    -- Aimbot mati → circle transparan, tapi tetep ada
+    -- Aimbot mati → reset
     if not CFG.aimEnabled then
         FOVCircle.Visible = true
         fovStroke.Transparency = 1.0
@@ -281,6 +293,8 @@ RunService.RenderStepped:Connect(function()
         targetLbl.Visible = false
         cameraLocked = false
         lastTarget = nil
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.AutoRotate = true end
         return
     end
 
@@ -295,26 +309,10 @@ RunService.RenderStepped:Connect(function()
     FOVCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
     crosshair.Visible = true
     crosshair.BackgroundTransparency = 0
-
-    if CFG.showFOV then
-        fovStroke.Transparency = 0.4
-    else
-        fovStroke.Transparency = 1.0
-    end
+    fovStroke.Transparency = CFG.showFOV and 0.4 or 1.0
 
     if not LocalPlayer.Character then return end
 
-    -- Debug print tiap 1 detik
-    debugCounter = debugCounter + 1
-    if CFG.debugMode and debugCounter % 60 == 0 then
-        print(string.format(
-            "[FOV] radius=%.1f | FOV=%.0f° | camFov=%.0f° | visible=%s | transparency=%.2f",
-            radius, CFG.maxAngleDeg, Camera.FieldOfView,
-            tostring(FOVCircle.Visible), fovStroke.Transparency
-        ))
-    end
-
-    -- Cari target (WALL CHECK dulu)
     local camPos  = Camera.CFrame.Position
     local lookVec = Camera.CFrame.LookVector
     local target  = findTarget(camPos, lookVec, getIgnoreList())
@@ -323,30 +321,92 @@ RunService.RenderStepped:Connect(function()
         cameraLocked = true
         lastTarget   = target
 
-        -- Circle merah = target locked
+        -- Warna lock
         fovStroke.Color = Color3.fromRGB(255, 50, 50)
         if CFG.showFOV then fovStroke.Transparency = 0 end
         crosshair.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-
         targetLbl.Text = "🎯 " .. target.player.Name
         targetLbl.Visible = true
 
-        -- Camera lock ke kepala target
-        local currentPos = Camera.CFrame.Position
-        local targetPos  = target.part.Position
-        local lookCF = CFrame.lookAt(currentPos, targetPos)
-        Camera.CFrame = Camera.CFrame:Lerp(lookCF, CFG.aimSpeed)
-    else
-        if cameraLocked then
-            cameraLocked = false
+        -- ================================
+        -- PREDICTION
+        -- ================================
+        local targetPos = target.part.Position
+        local targetVel = target.part.AssemblyLinearVelocity or Vector3.zero
+        local horizontalVel = Vector3.new(targetVel.X, 0, targetVel.Z)
+        local predictedPos = targetPos + horizontalVel * AIM_TUNE.prediction
+        predictedPos = predictedPos + AIM_TUNE.headOffset
+
+        -- ================================
+        -- SUDUT KE TARGET
+        -- ================================
+        local toTarget = predictedPos - camPos
+        local distToTarget = toTarget.Magnitude
+        local angleToTarget = math.deg(math.acos(
+            math.clamp(Camera.CFrame.LookVector.Unit:Dot(toTarget.Unit), -1, 1)
+        ))
+
+        -- ================================
+        -- SNAP / LERP
+        -- ================================
+        local isSnap = false
+        if angleToTarget <= AIM_TUNE.snapAngleDeg then
+            isSnap = true
+        elseif distToTarget <= AIM_TUNE.snapDistance and angleToTarget <= 8 then
+            isSnap = true
         end
 
-        -- Circle hijau = idle
+        if isSnap then
+            Camera.CFrame = CFrame.lookAt(camPos, predictedPos)
+        else
+            local baseLerp = math.max(CFG.aimSpeed, AIM_TUNE.minLerp)
+            local distanceFactor = math.clamp(1 - (distToTarget / CFG.maxDistance), 0.3, 1)
+            local lerpFactor = math.clamp(baseLerp * distanceFactor + 0.2, 0, 1)
+            local lookCF = CFrame.lookAt(camPos, predictedPos)
+            Camera.CFrame = Camera.CFrame:Lerp(lookCF, lerpFactor)
+        end
+
+        -- ================================
+        -- BODY ROTATION SYNC
+        -- ================================
+        if AIM_TUNE.rotateBody then
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hrp and hum then
+                hum.AutoRotate = false
+                local myPos = hrp.Position
+                local dirXZ = Vector3.new(predictedPos.X - myPos.X, 0, predictedPos.Z - myPos.Z)
+                if dirXZ.Magnitude > 0.1 then
+                    local targetYaw = math.atan2(-dirXZ.X, -dirXZ.Z)
+                    local curYaw = math.atan2(-hrp.CFrame.LookVector.X, -hrp.CFrame.LookVector.Z)
+                    local diff = (targetYaw - curYaw + math.pi) % (math.pi * 2) - math.pi
+                    local newYaw = curYaw + diff * 0.4
+                    local currentRotation = hrp.CFrame - hrp.Position
+                    hrp.CFrame = CFrame.new(hrp.Position)
+                        * CFrame.Angles(0, newYaw, 0)
+                        * currentRotation
+                end
+            end
+        end
+    else
+        if cameraLocked then cameraLocked = false end
         fovStroke.Color = Color3.fromRGB(0, 255, 100)
         if CFG.showFOV then fovStroke.Transparency = 0.4 end
         crosshair.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
-
         targetLbl.Visible = false
+
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.AutoRotate = true end
+    end
+
+    -- Debug
+    debugCounter = debugCounter + 1
+    if CFG.debugMode and debugCounter % 60 == 0 then
+        print(string.format(
+            "[FOV] radius=%.1f | FOV=%.0f° | visible=%s | trans=%.2f",
+            radius, CFG.maxAngleDeg, tostring(FOVCircle.Visible), fovStroke.Transparency
+        ))
     end
 end)
 -- ============================================================
@@ -383,7 +443,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -50, 1, 0)
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "🔥 INDONESIA TEST HUB v4"
+Title.Text = "🔥 INDONESIA HUB v4.2"
 Title.TextColor3 = Color3.fromRGB(0, 200, 255)
 Title.Font = Enum.Font.GothamBlack
 Title.TextSize = 13
@@ -535,11 +595,15 @@ toggleBtn("Aimbot Enable", CFG.aimEnabled, function(on) CFG.aimEnabled = on end)
 toggleBtn("Show FOV Circle", CFG.showFOV, function(on) CFG.showFOV = on end)
 toggleBtn("Head Only", CFG.headOnly, function(on) CFG.headOnly = on end)
 toggleBtn("Wall Check (LOS)", CFG.requireWallCheck, function(on) CFG.requireWallCheck = on end)
+toggleBtn("Body Sync", AIM_TUNE.rotateBody, function(on) AIM_TUNE.rotateBody = on end)
 toggleBtn("Debug Mode", CFG.debugMode, function(on) CFG.debugMode = on end)
 slider("FOV Angle (°)", 5, 180, CFG.maxAngleDeg, 1, function(v) CFG.maxAngleDeg = v end)
 slider("Max Distance", 50, 600, CFG.maxDistance, 10, function(v) CFG.maxDistance = v end)
 slider("Smooth (0.01-1.0)", 1, 100, math.floor(CFG.aimSpeed * 100), 1, function(v)
     CFG.aimSpeed = v / 100
+end)
+slider("Prediction", 1, 40, math.floor(AIM_TUNE.prediction * 100), 1, function(v)
+    AIM_TUNE.prediction = v / 100
 end)
 
 sectionLabel("👁️ ESP")
@@ -557,7 +621,7 @@ sectionLabel("ℹ️ INFO")
 local info = Instance.new("TextLabel")
 info.Size = UDim2.new(1, -4, 0, 70)
 info.BackgroundTransparency = 1
-info.Text = "Dev: LIKA ♀ | v4 FINAL\n4-part build\n🔴 = locked | 🟢 = idle\nUI toggle: RightShift"
+info.Text = "Dev: LIKA ♀ | v4.2 GACOR\n4-part build | Prediction + Snap\n🔴 = locked | 🟢 = idle\nUI toggle: RightShift"
 info.TextColor3 = Color3.fromRGB(140, 140, 160)
 info.Font = Enum.Font.Gotham
 info.TextSize = 11
@@ -599,4 +663,4 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("[INDONESIA TEST HUB v4] Loaded ✅ | 4-part build | RightShift = toggle UI")
+print("[INDONESIA HUB v4.2] Loaded ✅ | 4-part | GACOR EDITION")
