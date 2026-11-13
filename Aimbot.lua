@@ -1,9 +1,11 @@
 --[[
 ╔═══════════════════════════════════════════════════╗
-║   INDONESIA TEST HUB v3.1 — FIXED (Single File)   ║
+║   INDONESIA TEST HUB v4 — FINAL                   ║
 ║   Dev: LIKA (DeepSeek) ♀                          ║
-║   FOV Circle + AimAssist + ESP + WallCheck        ║
-║   UI: RightShift                                   ║
+║   Fitur: Camera Lock + FOV Circle + WallCheck     ║
+║          + ESP + UI Sliders                       ║
+║   Support: R15 & R6 | 4-part build                ║
+║   UI Toggle: [RightShift]                         ║
 ╚═══════════════════════════════════════════════════╝
 --]]
 
@@ -205,42 +207,53 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
--- FOV CIRCLE GUI
+-- FOV CIRCLE GUI (ROBUST)
 -- ============================================================
 local parentGui = (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui")
+
+local oldFOV = parentGui:FindFirstChild("FOVGui")
+if oldFOV then oldFOV:Destroy() end
 
 local FOVGui = Instance.new("ScreenGui")
 FOVGui.Name = "FOVGui"
 FOVGui.ResetOnSpawn = false
 FOVGui.IgnoreGuiInset = true
-FOVGui.DisplayOrder = 998
+FOVGui.DisplayOrder = 9999
+FOVGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 FOVGui.Parent = parentGui
 
 local FOVCircle = Instance.new("Frame")
+FOVCircle.Name = "FOVCircle"
 FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
 FOVCircle.Position = UDim2.new(0.5, 0, 0.5, 0)
+FOVCircle.Size = UDim2.new(0, 100, 0, 100)
 FOVCircle.BackgroundTransparency = 1
 FOVCircle.BorderSizePixel = 0
-FOVCircle.Visible = false
+FOVCircle.ZIndex = 2
+FOVCircle.Visible = true
 FOVCircle.Parent = FOVGui
 Instance.new("UICorner", FOVCircle).CornerRadius = UDim.new(1, 0)
 
 local fovStroke = Instance.new("UIStroke", FOVCircle)
 fovStroke.Color = Color3.fromRGB(0, 255, 100)
-fovStroke.Thickness = 1.5
+fovStroke.Thickness = 2
 fovStroke.Transparency = 0.4
+fovStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
 local crosshair = Instance.new("Frame")
+crosshair.Name = "Crosshair"
 crosshair.AnchorPoint = Vector2.new(0.5, 0.5)
 crosshair.Position = UDim2.new(0.5, 0, 0.5, 0)
-crosshair.Size = UDim2.new(0, 5, 0, 5)
+crosshair.Size = UDim2.new(0, 6, 0, 6)
 crosshair.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
 crosshair.BorderSizePixel = 0
-crosshair.Visible = false
+crosshair.ZIndex = 3
+crosshair.Visible = true
 crosshair.Parent = FOVGui
 Instance.new("UICorner", crosshair).CornerRadius = UDim.new(1, 0)
 
 local targetLbl = Instance.new("TextLabel")
+targetLbl.Name = "TargetLbl"
 targetLbl.AnchorPoint = Vector2.new(0.5, 0)
 targetLbl.Position = UDim2.new(0.5, 0, 0.5, 30)
 targetLbl.Size = UDim2.new(0, 250, 0, 18)
@@ -249,57 +262,90 @@ targetLbl.Text = ""
 targetLbl.TextColor3 = Color3.fromRGB(255, 80, 80)
 targetLbl.Font = Enum.Font.GothamBold
 targetLbl.TextSize = 12
+targetLbl.ZIndex = 3
 targetLbl.Visible = false
 targetLbl.Parent = FOVGui
+-- ============================================================
+-- MAIN LOOP — CAMERA LOCK + WALL CHECK
+-- ============================================================
+local cameraLocked = false
+local lastTarget   = nil
+local debugCounter = 0
 
--- ============================================================
--- MAIN LOOP
--- ============================================================
 RunService.RenderStepped:Connect(function()
+    -- Aimbot mati → circle transparan, tapi tetep ada
     if not CFG.aimEnabled then
-        FOVCircle.Visible = false
-        crosshair.Visible = false
+        FOVCircle.Visible = true
+        fovStroke.Transparency = 1.0
+        crosshair.BackgroundTransparency = 1
         targetLbl.Visible = false
+        cameraLocked = false
+        lastTarget = nil
         return
     end
 
+    -- Hitung radius FOV
     local viewport  = Camera.ViewportSize
     local camFovRad = math.rad(Camera.FieldOfView)
     local aimFovRad = math.rad(CFG.maxAngleDeg)
     local radius = (viewport.Y / 2) * math.tan(aimFovRad) / math.tan(camFovRad / 2)
     radius = math.clamp(radius, 20, viewport.Y * 1.5)
 
+    FOVCircle.Visible = true
+    FOVCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
+    crosshair.Visible = true
+    crosshair.BackgroundTransparency = 0
+
     if CFG.showFOV then
-        FOVCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
-        FOVCircle.Visible = true
-        crosshair.Visible = true
+        fovStroke.Transparency = 0.4
     else
-        FOVCircle.Visible = false
-        crosshair.Visible = false
+        fovStroke.Transparency = 1.0
     end
 
     if not LocalPlayer.Character then return end
+
+    -- Debug print tiap 1 detik
+    debugCounter = debugCounter + 1
+    if CFG.debugMode and debugCounter % 60 == 0 then
+        print(string.format(
+            "[FOV] radius=%.1f | FOV=%.0f° | camFov=%.0f° | visible=%s | transparency=%.2f",
+            radius, CFG.maxAngleDeg, Camera.FieldOfView,
+            tostring(FOVCircle.Visible), fovStroke.Transparency
+        ))
+    end
+
+    -- Cari target (WALL CHECK dulu)
     local camPos  = Camera.CFrame.Position
     local lookVec = Camera.CFrame.LookVector
     local target  = findTarget(camPos, lookVec, getIgnoreList())
 
     if target and target.part then
-        if CFG.showFOV then
-            fovStroke.Color = Color3.fromRGB(255, 50, 50)
-            fovStroke.Transparency = 0
-            crosshair.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-        end
+        cameraLocked = true
+        lastTarget   = target
+
+        -- Circle merah = target locked
+        fovStroke.Color = Color3.fromRGB(255, 50, 50)
+        if CFG.showFOV then fovStroke.Transparency = 0 end
+        crosshair.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+
         targetLbl.Text = "🎯 " .. target.player.Name
         targetLbl.Visible = true
-        local cur = Camera.CFrame
-        local tgt = CFrame.lookAt(cur.Position, target.part.Position)
-        Camera.CFrame = cur:Lerp(tgt, CFG.aimSpeed)
+
+        -- Camera lock ke kepala target
+        local currentPos = Camera.CFrame.Position
+        local targetPos  = target.part.Position
+        local lookCF = CFrame.lookAt(currentPos, targetPos)
+        Camera.CFrame = Camera.CFrame:Lerp(lookCF, CFG.aimSpeed)
     else
-        if CFG.showFOV then
-            fovStroke.Color = Color3.fromRGB(0, 255, 100)
-            fovStroke.Transparency = 0.4
-            crosshair.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+        if cameraLocked then
+            cameraLocked = false
         end
+
+        -- Circle hijau = idle
+        fovStroke.Color = Color3.fromRGB(0, 255, 100)
+        if CFG.showFOV then fovStroke.Transparency = 0.4 end
+        crosshair.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+
         targetLbl.Visible = false
     end
 end)
@@ -310,7 +356,7 @@ local SG = Instance.new("ScreenGui")
 SG.Name = "TestHubUI"
 SG.ResetOnSpawn = false
 SG.IgnoreGuiInset = true
-SG.DisplayOrder = 999
+SG.DisplayOrder = 10000
 SG.Parent = parentGui
 
 local Main = Instance.new("Frame")
@@ -337,7 +383,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -50, 1, 0)
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "🔥 INDONESIA TEST HUB v3.1"
+Title.Text = "🔥 INDONESIA TEST HUB v4"
 Title.TextColor3 = Color3.fromRGB(0, 200, 255)
 Title.Font = Enum.Font.GothamBlack
 Title.TextSize = 13
@@ -511,7 +557,7 @@ sectionLabel("ℹ️ INFO")
 local info = Instance.new("TextLabel")
 info.Size = UDim2.new(1, -4, 0, 70)
 info.BackgroundTransparency = 1
-info.Text = "Dev: LIKA ♀ | v3.1\n3-chunk single file\n🔴 = locked | 🟢 = idle\nUI toggle: RightShift"
+info.Text = "Dev: LIKA ♀ | v4 FINAL\n4-part build\n🔴 = locked | 🟢 = idle\nUI toggle: RightShift"
 info.TextColor3 = Color3.fromRGB(140, 140, 160)
 info.Font = Enum.Font.Gotham
 info.TextSize = 11
@@ -553,4 +599,4 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("[INDONESIA TEST HUB v3.1] Loaded ✅ | 3-chunk single file")
+print("[INDONESIA TEST HUB v4] Loaded ✅ | 4-part build | RightShift = toggle UI")
