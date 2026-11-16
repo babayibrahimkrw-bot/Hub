@@ -1,7 +1,7 @@
 -- ═══════════════════════════════════════════════
 --       INDONESIA HUB | Universal Script
 --       Version: 3.0 | By: Indonesia Hub
---       Sambung 5 bagian lalu execute!
+--       FIXED BY: LIKA (GUI CoreGui Bug)
 -- ═══════════════════════════════════════════════
 
 -- BAGIAN 1/5: Core + Data
@@ -12,7 +12,8 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local CoreGui = game:GetService("CoreGui")
+-- FIX: Gunakan gethui() untuk menghindari proteksi CoreGui
+local CoreGui = (gethui and gethui()) or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 local Lighting = game:GetService("Lighting")
 
 local LP = Players.LocalPlayer
@@ -183,9 +184,7 @@ local function getDist(pos)
 end
 
 local function makeESP(parent, title, color, sub)
-    -- Cek apakah parent valid
     if not parent or not parent.Parent then return end
-    -- Hapus ESP lama kalau ada
     local old = parent:FindFirstChild("IH_ESP")
     if old then old:Destroy() end
 
@@ -297,7 +296,6 @@ local function runESP()
     -- ITEM ESP
     if cfg.Item then
         for _, obj in ipairs(workspace:GetDescendants()) do
-            -- Skip karakter player
             local isChar = false
             for _, plr in ipairs(Players:GetPlayers()) do
                 if plr.Character and obj:IsDescendantOf(plr.Character) then
@@ -412,7 +410,6 @@ end))
 -- ═══ NOCLIP ═══
 _G.IH.AddConn(RunService.Stepped:Connect(function()
     if not _G.IH.Config.Player.Noclip then
-        -- Restore collision
         local char = LP.Character
         if char then
             for _, p in ipairs(char:GetDescendants()) do
@@ -528,7 +525,6 @@ function _G.IH.StopFarm()
     farmThread = nil
 end
 
--- Character respawn handler
 LP.CharacterAdded:Connect(function()
     task.wait(1)
     if _G.IH.Config.Player.Fly then _G.IH.StartFly() end
@@ -548,13 +544,16 @@ local ok4, err4 = pcall(function()
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local CoreGui = game:GetService("CoreGui")
+-- FIX: CoreGui ke gethui() atau PlayerGui
+local CoreGui = (gethui and gethui()) or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 local LP = Players.LocalPlayer
 
 -- Hapus GUI lama
 pcall(function()
-    CoreGui:FindFirstChild("IH_GUI") and CoreGui.IH_GUI:Destroy()
-    CoreGui:FindFirstChild("IH_Btn") and CoreGui.IH_Btn:Destroy()
+    local oldGUI = CoreGui:FindFirstChild("IH_GUI")
+    if oldGUI then oldGUI:Destroy() end
+    local oldBtn = CoreGui:FindFirstChild("IH_Btn")
+    if oldBtn then oldBtn:Destroy() end
 end)
 
 local SG = Instance.new("ScreenGui", CoreGui)
@@ -640,7 +639,6 @@ function _G.IH.MkToggle(parent, yPos, txt, initState, cb)
         pcall(cb, state)
     end)
 
-    -- Hover effect
     btn.MouseEnter:Connect(function()
         TweenService:Create(row, TweenInfo.new(0.1), {
             BackgroundColor3 = Color3.fromRGB(25,25,35)
@@ -703,8 +701,8 @@ function _G.IH.MkSlider(parent, yPos, txt, mn, mx, val, cb)
         v = math.clamp(math.floor(v+0.5), mn, mx)
         local pct = (v-mn)/(mx-mn)
         vBox.Text = tostring(v)
-        TweenService:Create(fill, TweenInfo.new(0.1), {Size=UDim2.new(pct,0,1,0)}):Play()
-        TweenService:Create(thumb, TweenInfo.new(0.1), {Position=UDim2.new(pct,-6,0.5,-6)}):Play()
+        TweenService:Create(fill, TweenInfo.new(0.1), {Size=UDim.new(pct,0,1,0)}):Play()
+        TweenService:Create(thumb, TweenInfo.new(0.1), {Position=UDim.new(pct,-6,0.5,-6)}):Play()
         pcall(cb, v)
     end
 
@@ -756,14 +754,12 @@ Main.ClipsDescendants = true
 mkCorner(Main, 10)
 mkStroke(Main, Color3.fromRGB(70,45,120), 1.5, 0.2)
 
--- Titlebar
 local TB = Instance.new("Frame", Main)
 TB.Size = UDim2.new(1,0,0,36)
 TB.BackgroundColor3 = cols.Sidebar
 TB.BorderSizePixel = 0
 mkStroke(TB, Color3.fromRGB(50,35,90), 1, 0.5)
 
--- Logo
 local logo = Instance.new("Frame", TB)
 logo.Size = UDim2.new(0,24,0,24)
 logo.Position = UDim2.new(0,10,0.5,-12)
@@ -783,7 +779,6 @@ mkLabel(TB, "Indonesia Hub", 13,
     Color3.fromRGB(210,195,255), Enum.Font.GothamBold,
     UDim2.new(0,42,0,0), UDim2.new(0.5,0,1,0))
 
--- Close & Min buttons
 local function mkTBBtn(xOff, col, txt, cb)
     local b = Instance.new("TextButton", TB)
     b.Size = UDim2.new(0,22,0,22)
@@ -805,7 +800,6 @@ mkTBBtn(-34, Color3.fromRGB(45,45,60),  "—", function()
         and UDim2.new(0,540,0,36) or UDim2.new(0,540,0,400)
 end)
 
--- Draggable
 local drag, dragSt, dragPos = false, nil, nil
 TB.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or
@@ -827,7 +821,6 @@ _G.IH.AddConn(UserInputService.InputEnded:Connect(function(i)
        i.UserInputType == Enum.UserInputType.Touch then drag = false end
 end))
 
--- Sidebar
 local SB = Instance.new("Frame", Main)
 SB.Size = UDim2.new(0,150,1,-36)
 SB.Position = UDim2.new(0,0,0,36)
@@ -835,14 +828,12 @@ SB.BackgroundColor3 = cols.Sidebar
 SB.BorderSizePixel = 0
 mkStroke(SB, Color3.fromRGB(45,35,75), 1, 0.5)
 
--- Content
 local CT = Instance.new("Frame", Main)
 CT.Size = UDim2.new(1,-154,1,-40)
 CT.Position = UDim2.new(0,152,0,38)
 CT.BackgroundTransparency = 1
 CT.ClipsDescendants = true
 
--- Tabs
 local tabBtns   = {}
 local tabFrames = {}
 
@@ -908,7 +899,6 @@ _G.IH.SwitchTab  = switchTab
 _G.IH.MainWindow = Main
 switchTab("player")
 
--- Open button (saat main di-close)
 local BtnSG = Instance.new("ScreenGui", CoreGui)
 BtnSG.Name = "IH_Btn"
 BtnSG.ResetOnSpawn = false
@@ -929,7 +919,6 @@ openBtn.MouseButton1Click:Connect(function()
     Main.Size = UDim2.new(0,540,0,400)
 end)
 
--- Toggle RShift
 _G.IH.AddConn(UserInputService.InputBegan:Connect(function(i, gp)
     if gp then return end
     if i.KeyCode == Enum.KeyCode.RightShift then
@@ -950,6 +939,12 @@ end
 local ok5, err5 = pcall(function()
 
 local TweenService = game:GetService("TweenService")
+
+-- Pastikan GUI part 4 sukses
+if not _G.IH or not _G.IH.TabFrames then
+    error("Gagal memuat GUI Core (Bagian 4). Cek console untuk error.")
+end
+
 local TF  = _G.IH.TabFrames
 local cfg = _G.IH.Config
 local MkT = _G.IH.MkToggle
@@ -1032,7 +1027,6 @@ MkT(ff, fy, "Auto Sell (Scrapper)", cfg.Farm.AutoSell, function(s)
     cfg.Farm.AutoSell = s
 end); fy += 42
 
--- Start/Stop Farm button
 local farmRow = Instance.new("Frame", ff)
 farmRow.BackgroundTransparency = 1
 farmRow.Position = UDim2.new(0,0,0,fy)
@@ -1068,7 +1062,6 @@ farmBtn.MouseButton1Click:Connect(function()
 end)
 fy += 42
 
--- Item selector label
 local selLbl = Instance.new("TextLabel", ff)
 selLbl.Position = UDim2.new(0,14,0,fy)
 selLbl.Size = UDim2.new(1,-28,0,18)
@@ -1080,7 +1073,6 @@ selLbl.Font = Enum.Font.GothamBold
 selLbl.TextXAlignment = Enum.TextXAlignment.Left
 fy += 22
 
--- Item grid
 local grid = Instance.new("Frame", ff)
 grid.Position = UDim2.new(0,10,0,fy)
 grid.Size = UDim2.new(1,-20,0,10)
@@ -1134,7 +1126,6 @@ ff.CanvasSize = UDim2.new(0,0,0,fy)
 local sf = TF.settings
 local sy = 6
 
--- Language
 local lrow = Instance.new("Frame", sf)
 lrow.BackgroundTransparency = 1
 lrow.Position = UDim2.new(0,0,0,sy)
@@ -1181,7 +1172,6 @@ enB.MouseButton1Click:Connect(function() setLang("EN") end)
 idB.MouseButton1Click:Connect(function() setLang("ID") end)
 sy += 46
 
--- Color presets
 local colorDefs = {
     {key="Accent",  lbl="Accent Color"},
     {key="Monster", lbl="Monster ESP Color"},
@@ -1260,7 +1250,6 @@ aDesc.TextXAlignment = Enum.TextXAlignment.Center
 
 af.CanvasSize = UDim2.new(0,0,0,250)
 
--- ═══ DONE ═══
 print("╔══════════════════════════╗")
 print("║  INDONESIA HUB v3.0 ✓  ║")
 print("║  Universal Script       ║")
