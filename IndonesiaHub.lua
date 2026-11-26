@@ -1,6 +1,7 @@
 -- ═══════════════════════════════════════════════
---       INDONESIA HUB | Lethal Ape v4.1
---       Full Script — Execute Langsung!
+--       INDONESIA HUB | Lethal Ape v4.2
+--       Optimized — Anti Lag
+--       By: Indonesia Hub
 -- ═══════════════════════════════════════════════
 
 local Players = game:GetService("Players")
@@ -11,20 +12,24 @@ local TweenService = game:GetService("TweenService")
 local LP = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- Cleanup
+-- Cleanup session lama
 if _G.IH then
     pcall(function()
-        for _, c in pairs(_G.IH.Conn or {}) do pcall(function() c:Disconnect() end) end
+        for _, c in pairs(_G.IH.Conn or {}) do
+            pcall(function() c:Disconnect() end)
+        end
         if _G.IH.GUI then _G.IH.GUI:Destroy() end
         if _G.IH.BtnGUI then _G.IH.BtnGUI:Destroy() end
+        if _G.IH.ESPThread then task.cancel(_G.IH.ESPThread) end
     end)
 end
 
 _G.IH = {
-    Conn = {},
-    GUI = nil,
-    BtnGUI = nil,
-    ESPCache = {},
+    Conn      = {},
+    GUI       = nil,
+    BtnGUI    = nil,
+    ESPCache  = {},
+    ESPThread = nil,
     Config = {
         Lang = "EN",
         Colors = {
@@ -36,10 +41,11 @@ _G.IH = {
             Sidebar = Color3.fromRGB(9,9,13),
         },
         ESP = {
-            Monster  = true,
-            Player   = true,
-            Item     = true,
-            MaxDist  = 300,
+            -- FIX: Semua ESP off by default biar ga lag saat execute
+            Monster  = false,
+            Player   = false,
+            Item     = false,
+            MaxDist  = 200, -- FIX: jarak lebih kecil
             TextSize = 11,
         },
         Player = {
@@ -57,7 +63,7 @@ _G.IH = {
             Active       = false,
             SelectedItem = "All",
             AutoSell     = true,
-            Delay        = 0.1,
+            Delay        = 0.15,
         },
     },
 }
@@ -71,7 +77,7 @@ _G.IH.Monsters = {
     "Renry","Lana","Rin","Billy","Noxar","Sandguy",
     "Fearful","Gooba","Lost","Lurker","Dus","Kus",
     "Bloodman","Gus","Scar","Ashy","Sandman","John",
-    "Stalker","Meat","Zombie","Enemy","Boss","Monster",
+    "Stalker","Meat",
 }
 
 _G.IH.Items = {
@@ -105,7 +111,7 @@ function _G.IH.IsPlayerPart(obj)
 end
 
 -- ═══════════════════════════════════════════════
--- ESP SYSTEM
+-- ESP SYSTEM — OPTIMIZED
 -- ═══════════════════════════════════════════════
 local function getDist(pos)
     local char = LP.Character
@@ -122,24 +128,24 @@ local function makeESP(part, title, color, sub)
     local bb = Instance.new("BillboardGui")
     bb.Name = "IH_ESP"
     bb.AlwaysOnTop = true
-    bb.Size = UDim2.new(0, 120, 0, 40)
-    bb.StudsOffset = Vector3.new(0, 2.5, 0)
+    bb.Size = UDim2.new(0,120,0,38)
+    bb.StudsOffset = Vector3.new(0,2.5,0)
     bb.MaxDistance = _G.IH.Config.ESP.MaxDist
     bb.Parent = part
 
-    local bg = Instance.new("Frame", bb)
+    local bg = Instance.new("Frame",bb)
     bg.BackgroundColor3 = Color3.fromRGB(5,5,8)
     bg.BackgroundTransparency = 0.15
     bg.Size = UDim2.new(1,0,1,0)
     bg.BorderSizePixel = 0
-    local bgC = Instance.new("UICorner", bg)
+    local bgC = Instance.new("UICorner",bg)
     bgC.CornerRadius = UDim.new(0,5)
-    local bgS = Instance.new("UIStroke", bg)
+    local bgS = Instance.new("UIStroke",bg)
     bgS.Color = color
     bgS.Thickness = 1.2
     bgS.Transparency = 0.1
 
-    local topL = Instance.new("TextLabel", bg)
+    local topL = Instance.new("TextLabel",bg)
     topL.BackgroundTransparency = 1
     topL.Size = UDim2.new(1,-4,0.55,0)
     topL.Position = UDim2.new(0,2,0,0)
@@ -152,7 +158,7 @@ local function makeESP(part, title, color, sub)
     topL.TextXAlignment = Enum.TextXAlignment.Center
     topL.TextTruncate = Enum.TextTruncate.AtEnd
 
-    local botL = Instance.new("TextLabel", bg)
+    local botL = Instance.new("TextLabel",bg)
     botL.BackgroundTransparency = 1
     botL.Size = UDim2.new(1,-4,0.45,0)
     botL.Position = UDim2.new(0,2,0.55,0)
@@ -166,6 +172,8 @@ local function makeESP(part, title, color, sub)
     botL.TextTruncate = Enum.TextTruncate.AtEnd
 
     _G.IH.ESPCache[part] = bb
+
+    -- Auto hapus kalau part hilang
     local conn
     conn = part.AncestryChanged:Connect(function()
         if not part.Parent then
@@ -176,85 +184,103 @@ local function makeESP(part, title, color, sub)
     end)
 end
 
-local function updateESP()
-    local cfg = _G.IH.Config.ESP
-    local cols = _G.IH.Config.Colors
-
-    for part, bb in pairs(_G.IH.ESPCache) do
-        if not part or not part.Parent then
-            pcall(function() bb:Destroy() end)
-            _G.IH.ESPCache[part] = nil
-        end
+-- FIX: ESP pakai task.spawn + task.wait biar ga blokir main thread
+local function startESPLoop()
+    if _G.IH.ESPThread then
+        pcall(function() task.cancel(_G.IH.ESPThread) end)
     end
+    _G.IH.ESPThread = task.spawn(function()
+        while true do
+            -- FIX: Cek dulu ada yang aktif ga, kalau ga skip
+            local cfg = _G.IH.Config.ESP
+            local cols = _G.IH.Config.Colors
+            local anyActive = cfg.Monster or cfg.Player or cfg.Item
 
-    if cfg.Monster then
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("Model") and obj ~= LP.Character then
-                local hum  = obj:FindFirstChildOfClass("Humanoid")
-                local root = obj:FindFirstChild("HumanoidRootPart")
-                if hum and root and hum.Health > 0 then
-                    for _, mn in ipairs(_G.IH.Monsters) do
-                        if obj.Name:lower():find(mn:lower()) then
-                            local d = getDist(root.Position)
-                            if d <= cfg.MaxDist and not _G.IH.ESPCache[root] then
-                                local hp = math.floor(hum.Health).."/"..math.floor(hum.MaxHealth)
-                                makeESP(root, obj.Name, cols.Monster, "HP:"..hp.." "..d.."m")
+            if anyActive then
+                -- Hapus ESP yang partnya udah hilang
+                for part, bb in pairs(_G.IH.ESPCache) do
+                    if not part or not part.Parent then
+                        pcall(function() bb:Destroy() end)
+                        _G.IH.ESPCache[part] = nil
+                    end
+                    task.wait() -- FIX: yield tiap iterasi
+                end
+
+                -- Monster ESP
+                if cfg.Monster then
+                    for _, obj in ipairs(workspace:GetDescendants()) do
+                        task.wait() -- FIX: yield biar ga freeze
+                        if obj:IsA("Model") and obj ~= LP.Character then
+                            local hum = obj:FindFirstChildOfClass("Humanoid")
+                            local root = obj:FindFirstChild("HumanoidRootPart")
+                            if hum and root and hum.Health > 0 then
+                                for _, mn in ipairs(_G.IH.Monsters) do
+                                    if obj.Name:lower():find(mn:lower()) then
+                                        local d = getDist(root.Position)
+                                        if d <= cfg.MaxDist and not _G.IH.ESPCache[root] then
+                                            local hp = math.floor(hum.Health).."/"..math.floor(hum.MaxHealth)
+                                            makeESP(root, obj.Name, cols.Monster, "HP:"..hp.." "..d.."m")
+                                        end
+                                        break
+                                    end
+                                end
                             end
-                            break
+                        end
+                    end
+                end
+
+                -- Player ESP
+                if cfg.Player then
+                    for _, plr in ipairs(Players:GetPlayers()) do
+                        task.wait()
+                        if plr ~= LP and plr.Character then
+                            local root = plr.Character:FindFirstChild("HumanoidRootPart")
+                            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                            if root and hum and hum.Health > 0 then
+                                local d = getDist(root.Position)
+                                if d <= cfg.MaxDist and not _G.IH.ESPCache[root] then
+                                    makeESP(root, plr.Name, cols.Player,
+                                        "HP:"..math.floor(hum.Health).." "..d.."m")
+                                end
+                            end
+                        end
+                    end
+                end
+
+                -- Item ESP
+                if cfg.Item then
+                    for _, obj in ipairs(workspace:GetDescendants()) do
+                        task.wait()
+                        if not _G.IH.IsPlayerPart(obj) then
+                            for _, item in ipairs(_G.IH.Items) do
+                                if obj.Name:lower():find(item.name:lower()) then
+                                    local part = obj:IsA("BasePart") and obj
+                                        or (obj:IsA("Model") and obj:FindFirstChildOfClass("BasePart"))
+                                    if part and not _G.IH.ESPCache[part] then
+                                        local d = getDist(part.Position)
+                                        if d <= cfg.MaxDist then
+                                            makeESP(part, item.name, cols.Item,
+                                                item.price.."G | "..d.."m")
+                                        end
+                                    end
+                                    break
+                                end
+                            end
                         end
                     end
                 end
             end
-        end
-    end
 
-    if cfg.Player then
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LP and plr.Character then
-                local root = plr.Character:FindFirstChild("HumanoidRootPart")
-                local hum  = plr.Character:FindFirstChildOfClass("Humanoid")
-                if root and hum and hum.Health > 0 then
-                    local d = getDist(root.Position)
-                    if d <= cfg.MaxDist and not _G.IH.ESPCache[root] then
-                        makeESP(root, plr.Name, cols.Player,
-                            "HP:"..math.floor(hum.Health).." "..d.."m")
-                    end
-                end
-            end
+            -- FIX: Interval scan lebih lama biar ringan
+            task.wait(2)
         end
-    end
-
-    if cfg.Item then
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if not _G.IH.IsPlayerPart(obj) then
-                for _, item in ipairs(_G.IH.Items) do
-                    if obj.Name:lower():find(item.name:lower()) then
-                        local part = obj:IsA("BasePart") and obj
-                            or (obj:IsA("Model") and obj:FindFirstChildOfClass("BasePart"))
-                        if part and not _G.IH.ESPCache[part] then
-                            local d = getDist(part.Position)
-                            if d <= cfg.MaxDist then
-                                makeESP(part, item.name, cols.Item,
-                                    item.price.."G | "..d.."m")
-                            end
-                        end
-                        break
-                    end
-                end
-            end
-        end
-    end
+    end)
 end
 
-local espTimer = 0
-_G.IH.AddConn(RunService.Heartbeat:Connect(function(dt)
-    espTimer += dt
-    if espTimer >= 0.5 then espTimer = 0; pcall(updateESP) end
-end))
-
+-- Auto detect item spawn
 _G.IH.AddConn(workspace.DescendantAdded:Connect(function(obj)
     if not _G.IH.Config.ESP.Item then return end
-    task.wait(0.1)
+    task.wait(0.2)
     if not obj.Parent or _G.IH.IsPlayerPart(obj) then return end
     for _, item in ipairs(_G.IH.Items) do
         if obj.Name:lower():find(item.name:lower()) then
@@ -272,6 +298,7 @@ _G.IH.AddConn(workspace.DescendantAdded:Connect(function(obj)
     end
 end))
 
+-- Auto hapus ESP kalau item hilang
 _G.IH.AddConn(workspace.DescendantRemoving:Connect(function(obj)
     local bb = _G.IH.ESPCache[obj]
     if bb then
@@ -280,8 +307,11 @@ _G.IH.AddConn(workspace.DescendantRemoving:Connect(function(obj)
     end
 end))
 
+-- Start ESP loop
+startESPLoop()
+
 -- ═══════════════════════════════════════════════
--- PLAYER MODS
+-- PLAYER MODS — OPTIMIZED
 -- ═══════════════════════════════════════════════
 local flyBV, flyBG, flyConn
 
@@ -293,18 +323,19 @@ function _G.IH.StartFly()
     if not root or not hum then return end
     hum.PlatformStand = true
 
-    flyBV = Instance.new("BodyVelocity", root)
+    flyBV = Instance.new("BodyVelocity",root)
     flyBV.Name = "IH_FlyBV"
     flyBV.Velocity = Vector3.zero
     flyBV.MaxForce = Vector3.new(1e4,1e4,1e4)
 
-    flyBG = Instance.new("BodyGyro", root)
+    flyBG = Instance.new("BodyGyro",root)
     flyBG.Name = "IH_FlyBG"
     flyBG.MaxTorque = Vector3.new(1e4,1e4,1e4)
     flyBG.P = 1e4
     flyBG.CFrame = root.CFrame
 
-    flyConn = RunService.Heartbeat:Connect(function()
+    -- FIX: Fly pakai RenderStepped bukan Heartbeat
+    flyConn = RunService.RenderStepped:Connect(function()
         if not _G.IH.Config.Player.Fly then _G.IH.StopFly(); return end
         if not flyBV or not flyBV.Parent then return end
         local spd = _G.IH.Config.Player.FlySpeed
@@ -334,59 +365,50 @@ function _G.IH.StopFly()
     if char then
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then hum.PlatformStand = false end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if root then
-            for _, v in ipairs(root:GetChildren()) do
-                if v.Name:find("IH_Fly") then v:Destroy() end
-            end
-        end
     end
 end
 
-_G.IH.AddConn(RunService.Stepped:Connect(function()
-    if not _G.IH.Config.Player.Noclip then return end
-    local char = LP.Character
-    if not char then return end
-    for _, p in ipairs(char:GetDescendants()) do
-        if p:IsA("BasePart") then p.CanCollide = false end
-    end
-end))
-
+-- FIX: Noclip & speed pakai satu Heartbeat aja biar efisien
 _G.IH.AddConn(RunService.Heartbeat:Connect(function()
-    if _G.IH.Config.Player.Noclip then return end
     local char = LP.Character
     if not char then return end
-    for _, p in ipairs(char:GetDescendants()) do
-        if p:IsA("BasePart") and not p.CanCollide then p.CanCollide = true end
+
+    -- Noclip
+    if _G.IH.Config.Player.Noclip then
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
+    end
+
+    -- Speed
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        if _G.IH.Config.Player.Speed then
+            hum.WalkSpeed = _G.IH.Config.Player.SpeedVal
+        elseif hum.WalkSpeed ~= 16 and not _G.IH.Config.Player.Speed then
+            hum.WalkSpeed = 16
+        end
+    end
+
+    -- TpWalk
+    if _G.IH.Config.Player.TpWalk and hum then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root and hum.MoveDirection.Magnitude > 0 then
+            root.CFrame = root.CFrame +
+                hum.MoveDirection * _G.IH.Config.Player.TpWalkSpeed * 0.016
+        end
     end
 end))
 
+-- InfJump
 _G.IH.AddConn(UserInputService.JumpRequest:Connect(function()
     if not _G.IH.Config.Player.InfJump then return end
     local char = LP.Character
     if not char then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum and hum.Health > 0 then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-end))
-
-_G.IH.AddConn(RunService.Heartbeat:Connect(function()
-    if not _G.IH.Config.Player.TpWalk then return end
-    local char = LP.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local hum  = char:FindFirstChildOfClass("Humanoid")
-    if not root or not hum then return end
-    if hum.MoveDirection.Magnitude > 0 then
-        root.CFrame = root.CFrame + hum.MoveDirection * _G.IH.Config.Player.TpWalkSpeed * 0.016
+    if hum and hum.Health > 0 then
+        hum:ChangeState(Enum.HumanoidStateType.Jumping)
     end
-end))
-
-_G.IH.AddConn(RunService.Heartbeat:Connect(function()
-    local char = LP.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    hum.WalkSpeed = _G.IH.Config.Player.Speed and _G.IH.Config.Player.SpeedVal or 16
 end))
 
 function _G.IH.SetFOV(v)
@@ -400,7 +422,7 @@ LP.CharacterAdded:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════
--- FARM SYSTEM
+-- FARM SYSTEM — OPTIMIZED
 -- ═══════════════════════════════════════════════
 local farmThread = nil
 
@@ -435,10 +457,13 @@ end
 local function collectItem(part)
     if not part or not part.Parent then return end
     tpTo(part.Position)
-    task.wait(0.08)
+    task.wait(0.1)
     local pp = part:FindFirstChildOfClass("ProximityPrompt")
         or (part.Parent and part.Parent:FindFirstChildOfClass("ProximityPrompt"))
-    if pp then pcall(function() fireproximityprompt(pp) end); return end
+    if pp then
+        pcall(function() fireproximityprompt(pp) end)
+        return
+    end
     pcall(function()
         local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         if root then
@@ -455,6 +480,7 @@ function _G.IH.StartFarm()
     farmThread = task.spawn(function()
         while _G.IH.Config.Farm.Active do
             local found = {}
+            -- FIX: Scan item dulu semua, baru collect
             for _, obj in ipairs(workspace:GetDescendants()) do
                 if not _G.IH.IsPlayerPart(obj) then
                     for _, item in ipairs(_G.IH.Items) do
@@ -471,11 +497,13 @@ function _G.IH.StartFarm()
                     end
                 end
             end
+
             for _, part in ipairs(found) do
                 if not _G.IH.Config.Farm.Active then break end
                 pcall(collectItem, part)
                 task.wait(_G.IH.Config.Farm.Delay)
             end
+
             if _G.IH.Config.Farm.AutoSell and #found > 0 then
                 local scrap = findScrapper()
                 if scrap then
@@ -487,7 +515,8 @@ function _G.IH.StartFarm()
                     task.wait(0.3)
                 end
             end
-            task.wait(0.3)
+
+            task.wait(0.5)
         end
         farmThread = nil
     end)
@@ -518,7 +547,6 @@ SG.DisplayOrder = 999
 SG.Parent = H
 _G.IH.GUI = SG
 
--- Helpers
 local function mkC(p,r)
     local c=Instance.new("UICorner",p);c.CornerRadius=UDim.new(0,r or 8);return c
 end
@@ -538,29 +566,24 @@ local function mkL(p,txt,sz,col,fnt,pos,size,xa)
     l.TextTruncate=Enum.TextTruncate.AtEnd;return l
 end
 
--- Toggle
 local function mkToggle(parent,yPos,txt,init,cb)
     local row=Instance.new("Frame",parent)
     row.BackgroundTransparency=1
     row.Position=UDim2.new(0,0,0,yPos)
     row.Size=UDim2.new(1,0,0,36)
     mkC(row,6)
-
     mkL(row,txt,13,Color3.fromRGB(210,210,215),Enum.Font.Gotham,
         UDim2.new(0,12,0,0),UDim2.new(1,-68,1,0))
-
     local bg=Instance.new("Frame",row)
     bg.Size=UDim2.new(0,44,0,22)
     bg.Position=UDim2.new(1,-54,0.5,-11)
     bg.BackgroundColor3=init and Color3.fromRGB(139,92,246) or Color3.fromRGB(40,40,52)
     bg.BorderSizePixel=0;mkC(bg,11)
-
     local dot=Instance.new("Frame",bg)
     dot.Size=UDim2.new(0,16,0,16)
     dot.Position=init and UDim2.new(0,25,0.5,-8) or UDim2.new(0,3,0.5,-8)
     dot.BackgroundColor3=Color3.fromRGB(255,255,255)
     dot.BorderSizePixel=0;mkC(dot,8)
-
     local state=init
     local function upd(s)
         state=s
@@ -571,7 +594,6 @@ local function mkToggle(parent,yPos,txt,init,cb)
             Position=s and UDim2.new(0,25,0.5,-8) or UDim2.new(0,3,0.5,-8)
         }):Play()
     end
-
     local btn=Instance.new("TextButton",row)
     btn.BackgroundTransparency=1;btn.Size=UDim2.new(1,0,1,0)
     btn.Text="";btn.ZIndex=2
@@ -581,20 +603,16 @@ local function mkToggle(parent,yPos,txt,init,cb)
         row.BackgroundColor3=Color3.fromRGB(20,20,30)
     end)
     btn.MouseLeave:Connect(function() row.BackgroundTransparency=1 end)
-
     return row,upd
 end
 
--- Slider
 local function mkSlider(parent,yPos,txt,mn,mx,val,cb)
     local row=Instance.new("Frame",parent)
     row.BackgroundTransparency=1
     row.Position=UDim2.new(0,0,0,yPos)
     row.Size=UDim2.new(1,0,0,50)
-
     mkL(row,txt,12,Color3.fromRGB(185,185,195),Enum.Font.Gotham,
         UDim2.new(0,12,0,2),UDim2.new(0.65,0,0,18))
-
     local vBox=Instance.new("TextBox",row)
     vBox.Size=UDim2.new(0,60,0,24);vBox.Position=UDim2.new(1,-72,0,12)
     vBox.BackgroundColor3=Color3.fromRGB(18,18,26)
@@ -603,25 +621,21 @@ local function mkSlider(parent,yPos,txt,mn,mx,val,cb)
     vBox.Font=Enum.Font.GothamBold;vBox.ClearTextOnFocus=false
     vBox.BorderSizePixel=0;mkC(vBox,5)
     mkS(vBox,Color3.fromRGB(70,50,110),1,0.3)
-
     local track=Instance.new("Frame",row)
     track.Position=UDim2.new(0,12,0,36)
     track.Size=UDim2.new(1,-90,0,4)
     track.BackgroundColor3=Color3.fromRGB(35,35,46)
     track.BorderSizePixel=0;mkC(track,2)
-
     local fill=Instance.new("Frame",track)
     fill.BackgroundColor3=Color3.fromRGB(139,92,246)
     fill.Size=UDim2.new((val-mn)/(mx-mn),0,1,0)
     fill.BorderSizePixel=0;mkC(fill,2)
-
     local thumb=Instance.new("Frame",track)
     thumb.Size=UDim2.new(0,12,0,12)
     thumb.Position=UDim2.new((val-mn)/(mx-mn),-6,0.5,-6)
     thumb.BackgroundColor3=Color3.fromRGB(255,255,255)
     thumb.BorderSizePixel=0;mkC(thumb,6)
     mkS(thumb,Color3.fromRGB(139,92,246),1.2,0)
-
     local function setVal(v)
         v=math.clamp(math.floor(v+0.5),mn,mx)
         local pct=(v-mn)/(mx-mn)
@@ -630,11 +644,9 @@ local function mkSlider(parent,yPos,txt,mn,mx,val,cb)
         TweenService:Create(thumb,TweenInfo.new(0.08),{Position=UDim2.new(pct,-6,0.5,-6)}):Play()
         pcall(cb,v)
     end
-
     vBox.FocusLost:Connect(function()
         local n=tonumber(vBox.Text);if n then setVal(n) end
     end)
-
     local dragging=false
     local dbtn=Instance.new("TextButton",track)
     dbtn.BackgroundTransparency=1;dbtn.Size=UDim2.new(1,0,1,16)
@@ -656,9 +668,8 @@ local function mkSlider(parent,yPos,txt,mn,mx,val,cb)
     return row,setVal
 end
 
--- ═══ MAIN WINDOW ═══
+-- Main Window
 local cols=_G.IH.Config.Colors
-
 local Main=Instance.new("Frame",SG)
 Main.Name="Main"
 Main.Size=UDim2.new(0,520,0,390)
@@ -669,7 +680,6 @@ Main.ClipsDescendants=true
 mkC(Main,12)
 mkS(Main,Color3.fromRGB(80,45,130),1.5,0.1)
 
--- Gradient BG
 local grad=Instance.new("UIGradient",Main)
 grad.Color=ColorSequence.new{
     ColorSequenceKeypoint.new(0,Color3.fromRGB(18,13,28)),
@@ -677,21 +687,17 @@ grad.Color=ColorSequence.new{
 }
 grad.Rotation=135
 
--- Titlebar
 local TB=Instance.new("Frame",Main)
 TB.Size=UDim2.new(1,0,0,36)
 TB.BackgroundColor3=Color3.fromRGB(10,8,16)
 TB.BorderSizePixel=0
 mkS(TB,Color3.fromRGB(60,35,100),1,0.3)
 
--- Logo glow
 local logoWrap=Instance.new("Frame",TB)
-logoWrap.Size=UDim2.new(0,26,0,26)
-logoWrap.Position=UDim2.new(0,8,0.5,-13)
+logoWrap.Size=UDim2.new(0,24,0,24)
+logoWrap.Position=UDim2.new(0,8,0.5,-12)
 logoWrap.BackgroundColor3=Color3.fromRGB(139,92,246)
-logoWrap.BorderSizePixel=0
-mkC(logoWrap,7)
-mkS(logoWrap,Color3.fromRGB(180,150,255),1.5,0.1)
+logoWrap.BorderSizePixel=0;mkC(logoWrap,7)
 local lt=Instance.new("TextLabel",logoWrap)
 lt.Size=UDim2.new(1,0,1,0);lt.BackgroundTransparency=1
 lt.Text="IH";lt.TextColor3=Color3.fromRGB(255,255,255)
@@ -699,38 +705,31 @@ lt.TextSize=10;lt.Font=Enum.Font.GothamBold
 lt.TextXAlignment=Enum.TextXAlignment.Center
 
 mkL(TB,"Indonesia Hub",13,Color3.fromRGB(200,180,255),Enum.Font.GothamBold,
-    UDim2.new(0,42,0,0),UDim2.new(0.55,0,1,0))
+    UDim2.new(0,40,0,0),UDim2.new(0.55,0,1,0))
 
--- Version badge
 local vbadge=Instance.new("TextLabel",TB)
 vbadge.Size=UDim2.new(0,36,0,16)
-vbadge.Position=UDim2.new(0,145,0.5,-8)
+vbadge.Position=UDim2.new(0,143,0.5,-8)
 vbadge.BackgroundColor3=Color3.fromRGB(80,45,130)
-vbadge.Text="v4.1"
-vbadge.TextColor3=Color3.fromRGB(200,180,255)
+vbadge.Text="v4.2";vbadge.TextColor3=Color3.fromRGB(200,180,255)
 vbadge.TextSize=9;vbadge.Font=Enum.Font.GothamBold
-vbadge.BorderSizePixel=0
-mkC(vbadge,4)
+vbadge.BorderSizePixel=0;mkC(vbadge,4)
 
--- Title buttons
 local function mkTBtn(xOff,col,txt,cb)
     local b=Instance.new("TextButton",TB)
-    b.Size=UDim2.new(0,20,0,20)
-    b.Position=UDim2.new(1,xOff,0.5,-10)
+    b.Size=UDim2.new(0,20,0,20);b.Position=UDim2.new(1,xOff,0.5,-10)
     b.BackgroundColor3=col;b.Text=txt
     b.TextColor3=Color3.fromRGB(255,255,255)
     b.TextSize=10;b.Font=Enum.Font.GothamBold
     b.BorderSizePixel=0;mkC(b,5)
-    b.MouseButton1Click:Connect(cb)
-    return b
+    b.MouseButton1Click:Connect(cb);return b
 end
-mkTBtn(-6, Color3.fromRGB(200,50,50),"✕",function() Main.Visible=false end)
+mkTBtn(-6,Color3.fromRGB(200,50,50),"✕",function() Main.Visible=false end)
 mkTBtn(-30,Color3.fromRGB(40,40,55),"—",function()
     Main.Size=Main.Size.Y.Offset>40
         and UDim2.new(0,520,0,36) or UDim2.new(0,520,0,390)
 end)
 
--- Drag
 local drag,dSt,dPos=false,nil,nil
 TB.InputBegan:Connect(function(i)
     if i.UserInputType==Enum.UserInputType.MouseButton1 or
@@ -752,7 +751,6 @@ _G.IH.AddConn(UserInputService.InputEnded:Connect(function(i)
        i.UserInputType==Enum.UserInputType.Touch then drag=false end
 end))
 
--- Sidebar
 local SB=Instance.new("Frame",Main)
 SB.Size=UDim2.new(0,145,1,-36)
 SB.Position=UDim2.new(0,0,0,36)
@@ -760,30 +758,12 @@ SB.BackgroundColor3=Color3.fromRGB(8,6,14)
 SB.BorderSizePixel=0
 mkS(SB,Color3.fromRGB(50,30,80),1,0.3)
 
--- Sidebar gradient
-local sbgrad=Instance.new("UIGradient",SB)
-sbgrad.Color=ColorSequence.new{
-    ColorSequenceKeypoint.new(0,Color3.fromRGB(12,8,20)),
-    ColorSequenceKeypoint.new(1,Color3.fromRGB(8,6,14)),
-}
-sbgrad.Rotation=180
-
--- Content
 local CT=Instance.new("Frame",Main)
 CT.Size=UDim2.new(1,-149,1,-40)
 CT.Position=UDim2.new(0,147,0,38)
 CT.BackgroundTransparency=1
 CT.ClipsDescendants=true
 
--- Divider
-local div=Instance.new("Frame",Main)
-div.Size=UDim2.new(0,1,1,-36)
-div.Position=UDim2.new(0,145,0,36)
-div.BackgroundColor3=Color3.fromRGB(80,45,130)
-div.BackgroundTransparency=0.5
-div.BorderSizePixel=0
-
--- Tabs
 local tabBtns={}
 local tabFrames={}
 local tabList={
@@ -798,26 +778,16 @@ local function switchTab(id)
     for tid,fr in pairs(tabFrames) do fr.Visible=tid==id end
     for tid,bt in pairs(tabBtns) do
         local a=tid==id
-        local activeCol=Color3.fromRGB(22,16,38)
         TweenService:Create(bt,TweenInfo.new(0.12),{
-            BackgroundColor3=a and activeCol or Color3.fromRGB(8,6,14),
+            BackgroundColor3=a and Color3.fromRGB(22,16,38) or Color3.fromRGB(8,6,14),
             BackgroundTransparency=a and 0 or 1,
         }):Play()
-        -- Active indicator
-        local ind=bt:FindFirstChild("Indicator")
-        if ind then
-            TweenService:Create(ind,TweenInfo.new(0.12),{
-                BackgroundTransparency=a and 0 or 1
-            }):Play()
-        end
-        local lbl=bt:FindFirstChild("TabLabel")
-        if lbl then
-            lbl.TextColor3=a and Color3.fromRGB(175,145,255) or Color3.fromRGB(100,100,120)
-        end
-        local ico=bt:FindFirstChild("TabIcon")
-        if ico then
-            ico.TextColor3=a and Color3.fromRGB(175,145,255) or Color3.fromRGB(100,100,120)
-        end
+        local ind=bt:FindFirstChild("Ind")
+        if ind then ind.BackgroundTransparency=a and 0 or 1 end
+        local lbl=bt:FindFirstChild("TL")
+        if lbl then lbl.TextColor3=a and Color3.fromRGB(175,145,255) or Color3.fromRGB(100,100,120) end
+        local ico=bt:FindFirstChild("TI")
+        if ico then ico.TextColor3=a and Color3.fromRGB(175,145,255) or Color3.fromRGB(100,100,120) end
     end
 end
 
@@ -825,55 +795,43 @@ for i,t in ipairs(tabList) do
     local btn=Instance.new("TextButton",SB)
     btn.Size=UDim2.new(1,-10,0,34)
     btn.Position=UDim2.new(0,5,0,8+(i-1)*38)
-    btn.BackgroundTransparency=1
-    btn.Text="";btn.BorderSizePixel=0
-    mkC(btn,7)
+    btn.BackgroundTransparency=1;btn.Text=""
+    btn.BorderSizePixel=0;mkC(btn,7)
 
-    -- Active indicator bar
     local ind=Instance.new("Frame",btn)
-    ind.Name="Indicator"
-    ind.Size=UDim2.new(0,3,0.6,0)
+    ind.Name="Ind";ind.Size=UDim2.new(0,3,0.6,0)
     ind.Position=UDim2.new(0,0,0.2,0)
     ind.BackgroundColor3=Color3.fromRGB(139,92,246)
-    ind.BackgroundTransparency=1
-    ind.BorderSizePixel=0
-    mkC(ind,2)
+    ind.BackgroundTransparency=1;ind.BorderSizePixel=0;mkC(ind,2)
 
     local ico=Instance.new("TextLabel",btn)
-    ico.Name="TabIcon"
-    ico.Size=UDim2.new(0,24,1,0)
+    ico.Name="TI";ico.Size=UDim2.new(0,24,1,0)
     ico.Position=UDim2.new(0,10,0,0)
-    ico.BackgroundTransparency=1
-    ico.Text=t.ico;ico.TextSize=14
+    ico.BackgroundTransparency=1;ico.Text=t.ico;ico.TextSize=14
     ico.Font=Enum.Font.GothamBold
     ico.TextColor3=Color3.fromRGB(100,100,120)
     ico.TextXAlignment=Enum.TextXAlignment.Center
 
     local lbl=Instance.new("TextLabel",btn)
-    lbl.Name="TabLabel"
-    lbl.Size=UDim2.new(1,-38,1,0)
+    lbl.Name="TL";lbl.Size=UDim2.new(1,-38,1,0)
     lbl.Position=UDim2.new(0,36,0,0)
-    lbl.BackgroundTransparency=1
-    lbl.Text=t.lbl;lbl.TextSize=12
+    lbl.BackgroundTransparency=1;lbl.Text=t.lbl;lbl.TextSize=12
     lbl.Font=Enum.Font.GothamBold
     lbl.TextColor3=Color3.fromRGB(100,100,120)
     lbl.TextXAlignment=Enum.TextXAlignment.Left
 
     local sf=Instance.new("ScrollingFrame",CT)
     sf.Size=UDim2.new(1,0,1,0)
-    sf.BackgroundTransparency=1
-    sf.BorderSizePixel=0
+    sf.BackgroundTransparency=1;sf.BorderSizePixel=0
     sf.ScrollBarThickness=2
     sf.ScrollBarImageColor3=Color3.fromRGB(90,65,150)
-    sf.CanvasSize=UDim2.new(0,0,0,600)
-    sf.Visible=false
+    sf.CanvasSize=UDim2.new(0,0,0,600);sf.Visible=false
 
-    tabBtns[t.id]=btn
-    tabFrames[t.id]=sf
+    tabBtns[t.id]=btn;tabFrames[t.id]=sf
     btn.MouseButton1Click:Connect(function() switchTab(t.id) end)
 end
 
--- ═══ PLAYER TAB ═══
+-- Player Tab
 local pf=tabFrames.player;local py=6
 mkToggle(pf,py,"Fly",_G.IH.Config.Player.Fly,function(s)
     _G.IH.Config.Player.Fly=s
@@ -905,7 +863,7 @@ mkSlider(pf,py,"Speed Value",16,500,_G.IH.Config.Player.SpeedVal,function(v)
 end);py+=54
 pf.CanvasSize=UDim2.new(0,0,0,py+10)
 
--- ═══ VISUALS TAB ═══
+-- Visuals Tab
 local vf=tabFrames.visuals;local vy=6
 mkToggle(vf,vy,"Monster ESP",_G.IH.Config.ESP.Monster,function(s)
     _G.IH.Config.ESP.Monster=s
@@ -916,7 +874,7 @@ end);vy+=40
 mkToggle(vf,vy,"Item ESP",_G.IH.Config.ESP.Item,function(s)
     _G.IH.Config.ESP.Item=s
 end);vy+=40
-mkSlider(vf,vy,"Max Distance",50,1000,_G.IH.Config.ESP.MaxDist,function(v)
+mkSlider(vf,vy,"Max Distance",50,500,_G.IH.Config.ESP.MaxDist,function(v)
     _G.IH.Config.ESP.MaxDist=v
 end);vy+=54
 mkSlider(vf,vy,"ESP Text Size",8,16,_G.IH.Config.ESP.TextSize,function(v)
@@ -924,7 +882,7 @@ mkSlider(vf,vy,"ESP Text Size",8,16,_G.IH.Config.ESP.TextSize,function(v)
 end);vy+=54
 vf.CanvasSize=UDim2.new(0,0,0,vy+10)
 
--- ═══ FARM TAB ═══
+-- Farm Tab
 local ff=tabFrames.farm;local fy=6
 mkToggle(ff,fy,"Farm All Items",_G.IH.Config.Farm.SelectedItem=="All",function(s)
     _G.IH.Config.Farm.SelectedItem=s and "All" or _G.IH.Items[1].name
@@ -955,12 +913,10 @@ fbtn.MouseButton1Click:Connect(function()
     if farmOn then
         fbtn.Text="⏹  Stop Farm"
         fbtn.BackgroundColor3=Color3.fromRGB(190,55,55)
-        mkS(fbtn,Color3.fromRGB(255,100,100),1,0.5)
         _G.IH.StartFarm()
     else
         fbtn.Text="▶  Start Farm"
         fbtn.BackgroundColor3=Color3.fromRGB(45,170,90)
-        mkS(fbtn,Color3.fromRGB(80,220,130),1,0.5)
         _G.IH.StopFarm()
     end
 end)
@@ -993,6 +949,7 @@ local function refreshGrid(sel)
         end
     end
 end
+
 for _,item in ipairs(_G.IH.Items) do
     local ib=Instance.new("TextButton",grid)
     ib.Size=UDim2.new(0,100,0,24)
@@ -1007,12 +964,13 @@ for _,item in ipairs(_G.IH.Items) do
         refreshGrid(item.name)
     end)
 end
+
 local gridH=math.ceil(#_G.IH.Items/4)*28+4
 grid.Size=UDim2.new(1,-16,0,gridH)
 fy=fy+gridH+10
 ff.CanvasSize=UDim2.new(0,0,0,fy)
 
--- ═══ SETTINGS TAB ═══
+-- Settings Tab
 local sf=tabFrames.settings;local sy=6
 local lrow=Instance.new("Frame",sf)
 lrow.BackgroundTransparency=1
@@ -1033,13 +991,16 @@ local function mkLB(p,xOff,txt,act)
 end
 local enB=mkLB(lrow,-96,"EN",_G.IH.Config.Lang=="EN")
 local idB=mkLB(lrow,-48,"ID",_G.IH.Config.Lang=="ID")
-local function setLang(l)
-    _G.IH.Config.Lang=l
-    enB.BackgroundColor3=l=="EN" and Color3.fromRGB(95,50,170) or Color3.fromRGB(22,22,32)
-    idB.BackgroundColor3=l=="ID" and Color3.fromRGB(95,50,170) or Color3.fromRGB(22,22,32)
-end
-enB.MouseButton1Click:Connect(function() setLang("EN") end)
-idB.MouseButton1Click:Connect(function() setLang("ID") end)
+enB.MouseButton1Click:Connect(function()
+    _G.IH.Config.Lang="EN"
+    enB.BackgroundColor3=Color3.fromRGB(95,50,170)
+    idB.BackgroundColor3=Color3.fromRGB(22,22,32)
+end)
+idB.MouseButton1Click:Connect(function()
+    _G.IH.Config.Lang="ID"
+    idB.BackgroundColor3=Color3.fromRGB(95,50,170)
+    enB.BackgroundColor3=Color3.fromRGB(22,22,32)
+end)
 sy+=42
 
 local colorDefs={
@@ -1073,60 +1034,43 @@ for _,cd in ipairs(colorDefs) do
 end
 sf.CanvasSize=UDim2.new(0,0,0,sy+10)
 
--- ═══ ABOUT TAB ═══
+-- About Tab
 local af=tabFrames.about
 local abox=Instance.new("Frame",af)
 abox.Position=UDim2.new(0,10,0,10)
-abox.Size=UDim2.new(1,-20,0,210)
+abox.Size=UDim2.new(1,-20,0,200)
 abox.BackgroundColor3=Color3.fromRGB(10,8,16)
 abox.BorderSizePixel=0;mkC(abox,12)
 mkS(abox,Color3.fromRGB(80,45,130),1.5,0.1)
-local agrad=Instance.new("UIGradient",abox)
-agrad.Color=ColorSequence.new{
-    ColorSequenceKeypoint.new(0,Color3.fromRGB(18,12,30)),
-    ColorSequenceKeypoint.new(1,Color3.fromRGB(10,8,16)),
-}
-agrad.Rotation=135
 local al=Instance.new("TextLabel",abox)
-al.Size=UDim2.new(1,0,0,50);al.Position=UDim2.new(0,0,0,8)
+al.Size=UDim2.new(1,0,0,48);al.Position=UDim2.new(0,0,0,8)
 al.BackgroundTransparency=1;al.Text="🇮🇩 Indonesia Hub"
 al.TextColor3=Color3.fromRGB(175,145,255);al.TextSize=20
 al.Font=Enum.Font.GothamBold;al.TextXAlignment=Enum.TextXAlignment.Center
 local ad=Instance.new("TextLabel",abox)
-ad.Size=UDim2.new(1,-16,0,145);ad.Position=UDim2.new(0,8,0,56)
+ad.Size=UDim2.new(1,-16,0,135);ad.Position=UDim2.new(0,8,0,54)
 ad.BackgroundTransparency=1
-ad.Text="Lethal Ape Script v4.1\n\n✅ ESP: Monster, Player, Item\n✅ Player: Fly, Noclip, TpWalk\n✅ Speed Hack & FOV Changer\n✅ Farm: Auto Collect & Sell\n✅ Settings: Color & Language\n\nRShift = Toggle GUI\nBy: Indonesia Hub Community"
+ad.Text="Lethal Ape Script v4.2\nAnti-Lag Optimized\n\n✅ ESP off by default (ringan)\n✅ Fly, Noclip, TpWalk\n✅ Speed Hack & FOV\n✅ Farm Auto Collect & Sell\n\nRShift / Tombol IH = Toggle\nBy: Indonesia Hub"
 ad.TextColor3=Color3.fromRGB(140,140,160);ad.TextSize=11
 ad.Font=Enum.Font.Gotham;ad.TextWrapped=true
 ad.TextXAlignment=Enum.TextXAlignment.Center
-af.CanvasSize=UDim2.new(0,0,0,230)
+af.CanvasSize=UDim2.new(0,0,0,220)
 
 switchTab("player")
 
--- ═══ OPEN BUTTON (Floating) ═══
+-- Floating Button
 local BG=Instance.new("ScreenGui")
 BG.Name="IH_Btn";BG.ResetOnSpawn=false
 BG.DisplayOrder=998;BG.Parent=H
 _G.IH.BtnGUI=BG
 
--- Background button
 local btnFrame=Instance.new("Frame",BG)
-btnFrame.Size=UDim2.new(0,52,0,52)
-btnFrame.Position=UDim2.new(0,8,0.5,-26)
+btnFrame.Size=UDim2.new(0,50,0,50)
+btnFrame.Position=UDim2.new(0,8,0.5,-25)
 btnFrame.BackgroundColor3=Color3.fromRGB(10,8,18)
-btnFrame.BorderSizePixel=0;mkC(btnFrame,14)
+btnFrame.BorderSizePixel=0;mkC(btnFrame,13)
 mkS(btnFrame,Color3.fromRGB(100,60,180),2,0.1)
 
--- Glow effect
-local glow=Instance.new("Frame",btnFrame)
-glow.Size=UDim2.new(1,10,1,10)
-glow.Position=UDim2.new(0,-5,0,-5)
-glow.BackgroundColor3=Color3.fromRGB(100,60,180)
-glow.BackgroundTransparency=0.85
-glow.BorderSizePixel=0;mkC(glow,18)
-glow.ZIndex=0
-
--- Gradient on button
 local btnGrad=Instance.new("UIGradient",btnFrame)
 btnGrad.Color=ColorSequence.new{
     ColorSequenceKeypoint.new(0,Color3.fromRGB(100,60,200)),
@@ -1147,25 +1091,10 @@ local btnSub=Instance.new("TextLabel",btnFrame)
 btnSub.Size=UDim2.new(1,0,0.35,0)
 btnSub.Position=UDim2.new(0,0,0.62,0)
 btnSub.BackgroundTransparency=1
-btnSub.Text="v4.1"
+btnSub.Text="v4.2"
 btnSub.TextColor3=Color3.fromRGB(180,150,255)
 btnSub.TextSize=8;btnSub.Font=Enum.Font.Gotham
 btnSub.TextXAlignment=Enum.TextXAlignment.Center
-
--- Pulse animation
-local pulsing=true
-task.spawn(function()
-    while pulsing do
-        TweenService:Create(glow,TweenInfo.new(1,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut),{
-            BackgroundTransparency=0.7
-        }):Play()
-        task.wait(1)
-        TweenService:Create(glow,TweenInfo.new(1,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut),{
-            BackgroundTransparency=0.92
-        }):Play()
-        task.wait(1)
-    end
-end)
 
 local ob=Instance.new("TextButton",btnFrame)
 ob.Size=UDim2.new(1,0,1,0);ob.BackgroundTransparency=1
@@ -1173,17 +1102,15 @@ ob.Text="";ob.ZIndex=2
 ob.MouseButton1Click:Connect(function()
     Main.Visible=not Main.Visible
     if Main.Visible then Main.Size=UDim2.new(0,520,0,390) end
-    -- Animasi button klik
-    TweenService:Create(btnFrame,TweenInfo.new(0.1),{
-        Size=UDim2.new(0,46,0,46),Position=UDim2.new(0,11,0.5,-23)
+    TweenService:Create(btnFrame,TweenInfo.new(0.08),{
+        Size=UDim2.new(0,44,0,44),Position=UDim2.new(0,11,0.5,-22)
     }):Play()
-    task.wait(0.1)
-    TweenService:Create(btnFrame,TweenInfo.new(0.1),{
-        Size=UDim2.new(0,52,0,52),Position=UDim2.new(0,8,0.5,-26)
+    task.wait(0.08)
+    TweenService:Create(btnFrame,TweenInfo.new(0.08),{
+        Size=UDim2.new(0,50,0,50),Position=UDim2.new(0,8,0.5,-25)
     }):Play()
 end)
 
--- Toggle RShift
 _G.IH.AddConn(UserInputService.InputBegan:Connect(function(i,gp)
     if gp then return end
     if i.KeyCode==Enum.KeyCode.RightShift then
@@ -1195,11 +1122,11 @@ end))
 end)
 
 if not ok then
-    warn("[IH] GUI Error: "..tostring(err))
+    warn("[IH] Error: "..tostring(err))
 else
     print("╔══════════════════════════════╗")
-    print("║   INDONESIA HUB v4.1 ✓      ║")
-    print("║   Tombol IH = Buka/Tutup UI ║")
-    print("║   RShift   = Toggle GUI     ║")
+    print("║  INDONESIA HUB v4.2 ✓       ║")
+    print("║  Anti-Lag Optimized         ║")
+    print("║  Tombol IH / RShift = GUI   ║")
     print("╚══════════════════════════════╝")
 end
